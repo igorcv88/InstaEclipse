@@ -8,15 +8,14 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Instagram -> companion half of the settings sync: decides which of Instagram's settings
+ * Instagram -> companion half of the settings sync: which of Instagram's settings
  * ({@code instaeclipse_prefs}) go into the companion's copy ({@code instaeclipse_cache}).
  *
- * <p>Mirror image of {@link CompanionSync#pull}: a companion value is still "pending" (newer than
- * anything Instagram has) when its {@code __ts_<key>} stamp is newer than both Instagram's last
- * in-app change ({@code __igts_<key>}) and the last companion value Instagram applied
- * ({@code __applied_<key>}). Pending companion values are kept; for every other key Instagram's
- * value is the effective one and replaces the companion's. So an older value never overwrites a
- * newer one in either direction.
+ * <p>Mirror of {@link CompanionSync#pull}: a companion value is "pending" (newer than anything
+ * Instagram has) when its {@code __ts_<key>} stamp beats both Instagram's last in-app change
+ * ({@code __igts_<key>}) and the last companion value Instagram applied ({@code __applied_<key>}).
+ * Pending values are kept; otherwise Instagram's value replaces the companion's. An older value
+ * never overwrites a newer one in either direction.
  *
  * <p>Pure Java (no Android) so it can be unit tested.
  */

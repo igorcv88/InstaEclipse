@@ -40,7 +40,7 @@ public class IgThemeHook {
         // These hooks sit on very hot framework methods (getColor, resolveAttribute); on some
         // devices (Android 13 / SM-G780G) that makes ART's JIT crash IG, so they are only installed
         // when the custom theme is on (turning it on later applies after an Instagram restart).
-        if (!FeatureFlags.customThemeEnabled) {
+        if (!FeatureFlags.customThemeEnabled && !FeatureFlags.themeAccentOnly) {
             ModuleLog.line("(InstaEclipse | Theme): off -> hooks not installed");
             return;
         }
@@ -247,13 +247,15 @@ public class IgThemeHook {
         XC_MethodHook statusHook = new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
-                if (IgThemeEngine.isActive()) param.args[0] = IgThemeEngine.getActivePalette().statusBar;
+                if (IgThemeEngine.isActive() && !IgThemeEngine.isAccentOnlyMode())
+                    param.args[0] = IgThemeEngine.getActivePalette().statusBar;
             }
         };
         XC_MethodHook navHook = new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
-                if (IgThemeEngine.isActive()) param.args[0] = IgThemeEngine.getActivePalette().navigation;
+                if (IgThemeEngine.isActive() && !IgThemeEngine.isAccentOnlyMode())
+                    param.args[0] = IgThemeEngine.getActivePalette().navigation;
             }
         };
         if (!tryHookPhoneWindow(cl, statusHook, navHook)) tryHookPhoneWindow(null, statusHook, navHook);
@@ -279,14 +281,15 @@ public class IgThemeHook {
         Activity activity = UIHookManager.getCurrentActivity();
         if (activity == null || activity.isFinishing()) return;
         IgThemeEngine.ensureInitialized(activity);
-        if (!FeatureFlags.customThemeEnabled) return;
+        if (!FeatureFlags.customThemeEnabled && !FeatureFlags.themeAccentOnly) return;
         IgColorRemapEngine.ensureBuilt(activity);
         applyWindowColors(activity);
         activity.getWindow().getDecorView().post(activity::recreate);
     }
 
     static void applyWindowColors(Activity activity) {
-        if (activity == null || !IgThemeEngine.isActive()) return;
+        // Accent-only recolor must not repaint the status/navigation bars or the window background.
+        if (activity == null || !IgThemeEngine.isActive() || IgThemeEngine.isAccentOnlyMode()) return;
         try {
             IgThemePalette palette = IgThemeEngine.getActivePalette();
             Window window = activity.getWindow();

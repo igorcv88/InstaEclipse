@@ -24,8 +24,11 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
+
+import ps.reso.instaeclipse.xposedcompat.AndroidAppHelper;
 
 import ps.reso.instaeclipse.xposedcompat.XC_MethodHook;
 import ps.reso.instaeclipse.xposedcompat.XposedBridge;
@@ -54,7 +57,7 @@ public class StoryViewerSearchHook {
 
     private static final String TAG = "(IE|ViewerSearch) ";
     private static final Map<Object, String> QUERIES = Collections.synchronizedMap(new WeakHashMap<>());
-    private static final Map<Object, Integer> SORT_MODES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final StoryViewerSortModeCache SORT_MODES = new StoryViewerSortModeCache();
     private static final String SORT_PREFS = "ie_story_viewer_controls";
     private static final String SORT_KEY = "sort_mode";
     private static final Map<Object, Boolean> INJECTED = Collections.synchronizedMap(new WeakHashMap<>());
@@ -96,9 +99,13 @@ public class StoryViewerSearchHook {
                 protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
                     if (!FeatureFlags.storyViewerSearch) return;
                     Object ad = param.thisObject;
+                    // Read the saved preference on the builder thread before filtering/sorting.
+                    // The UI can be initialized asynchronously, so it must not own this load.
+                    Context context = AndroidAppHelper.currentApplication();
+                    if (context == null) context = UIHookManager.getCurrentActivity();
+                    int mode = resolveSortMode(ad, context);
                     injectSearchBox(ad);
                     if (!(param.args[0] instanceof List<?> list)) return;
-                    int mode = SORT_MODES.getOrDefault(ad, StoryViewerListOrder.INSTAGRAM);
                     // The source list is never modified; only loaded viewer sections are changed.
                     param.args[0] = StoryViewerListOrder.apply(list, recordClass, QUERIES.get(ad),
                             mode, StoryViewerSearchHook::username);
@@ -134,10 +141,7 @@ public class StoryViewerSearchHook {
             View list = findListFor(act.getWindow().getDecorView(), adapter);
             if (list == null || !(list.getParent() instanceof ViewGroup parent)) return;
             float d = act.getResources().getDisplayMetrics().density;
-            int savedSort = StoryViewerListOrder.validatedMode(
-                    act.getSharedPreferences(SORT_PREFS, Context.MODE_PRIVATE).getInt(
-                            SORT_KEY, StoryViewerListOrder.INSTAGRAM));
-            SORT_MODES.put(adapter, savedSort);
+            int savedSort = resolveSortMode(adapter, act);
             EditText et = new EditText(act);
             et.setHint(I18n.t(act, R.string.ig_viewer_search_hint));
             et.setSingleLine(true);
@@ -189,11 +193,21 @@ public class StoryViewerSearchHook {
             try {
                 parent.addView(controls, parent.indexOfChild(list), lp);
                 INJECTED.put(adapter, Boolean.TRUE);
+                // Covers early builder calls without a usable context. Once UI is visible,
+                // reapply the saved sort; the cache keeps any newer user choice intact.
+                if (savedSort != StoryViewerListOrder.INSTAGRAM) requestRebuild(adapter);
                 ModuleLog.line(TAG + "search and sort added in " + parent.getClass().getSimpleName());
             } catch (Throwable t) {
                 ModuleLog.line(TAG + "⚠️ add controls: " + t);
             }
         });
+    }
+
+    private static int resolveSortMode(Object adapter, Context context) {
+        if (adapter == null) return StoryViewerListOrder.INSTAGRAM;
+        if (context == null) return SORT_MODES.selected(adapter);
+        return SORT_MODES.resolve(adapter, () -> context.getSharedPreferences(
+                SORT_PREFS, Context.MODE_PRIVATE).getInt(SORT_KEY, StoryViewerListOrder.INSTAGRAM));
     }
 
     private static void requestRebuild(Object adapter) {
@@ -214,7 +228,7 @@ public class StoryViewerSearchHook {
 
     private static void showSortMenu(Activity act, TextView button, Object adapter) {
         PopupMenu popup = new PopupMenu(act, button);
-        int selected = SORT_MODES.getOrDefault(adapter, StoryViewerListOrder.INSTAGRAM);
+        int selected = SORT_MODES.selected(adapter);
         popup.getMenu().add(0, StoryViewerListOrder.INSTAGRAM, 0,
                 I18n.t(act, R.string.ig_viewer_sort_menu_original)).setCheckable(true);
         popup.getMenu().add(0, StoryViewerListOrder.NAME_AZ, 1,
@@ -226,7 +240,7 @@ public class StoryViewerSearchHook {
             popup.getMenu().getItem(i).setChecked(popup.getMenu().getItem(i).getItemId() == selected);
         popup.setOnMenuItemClickListener(item -> {
             int chosen = StoryViewerListOrder.validatedMode(item.getItemId());
-            SORT_MODES.put(adapter, chosen);
+            SORT_MODES.select(adapter, chosen);
             act.getSharedPreferences(SORT_PREFS, Context.MODE_PRIVATE).edit()
                     .putInt(SORT_KEY, chosen).apply();
             button.setText(sortLabel(act, chosen));

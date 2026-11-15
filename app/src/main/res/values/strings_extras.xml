@@ -24,4 +24,22 @@
     <string name="ig_dialog_location_current_title">Current location</string>
     <string name="ig_dialog_location_recent">Recent places</string>
     <string name="ig_dialog_location_applied">Location applied</string>
+    <string name="ig_dialog_extras_reels_blur_bars">Blur the bars around Reels</string>
+    <string name="ig_dialog_extras_round_reel_corners">Round Reel corners</string>
+    <string name="ig_dialog_reels_clean_up">Clean up Reels</string>
+    <string name="ig_dialog_extras_reels_hide_follow">Hide Follow button</string>
+    <string name="ig_dialog_extras_reels_hide_meta_ai">Hide Meta AI prompts</string>
+    <string name="ig_dialog_extras_reels_hide_pills">Hide template and audio pills</string>
+    <string name="ig_dialog_extras_reels_hide_comment_bar">Hide comment bar</string>
+    <string name="ig_dialog_extras_safe_pacing">Lower ban risk (slower bulk actions)</string>
+
+    <!-- Group / mute Instagram's notifications (ported from HushGram) -->
+    <string name="ig_notif_group_title">Group notifications</string>
+    <string name="ig_notif_group_sub">Puts Instagram\'s notifications in one group that shows how many it holds, so they don\'t fill your notification shade. Tapping one still opens it.</string>
+    <string name="ig_notif_group_by_type">Group by type</string>
+    <string name="ig_notif_group_by_type_sub">A group for each kind of notification, such as comments or messages, instead of one group.</string>
+    <string name="ig_notif_mute_title">Mute notification types</string>
+    <string name="ig_notif_mute_sub">Drop chosen notification channels before they reach the shade, such as promo pushes.</string>
+    <string name="ig_notif_mute_empty">No notification channels yet. Open Instagram and let it post a notification first, then they appear here.</string>
+    <string name="ig_notif_mute_count">Mute notification types (%1$d muted)</string>
 </resources>

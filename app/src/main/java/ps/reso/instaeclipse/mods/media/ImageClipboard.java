@@ -18,13 +18,11 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 /**
  * Copy a photo straight to the clipboard (#228) instead of saving it to the gallery.
  *
- * Clipboard images must be content URIs other apps may read. Instagram ships
- * androidx.core.content.FileProvider (authority com.instagram.fileprovider on the official app)
- * whose path config exposes {@code <cache-path name="cache" path="/">}, with
- * grantUriPermissions="true". So we download into IG's cache dir and put
- * content://&lt;authority&gt;/cache/&lt;file&gt; on the clipboard; the clipboard service grants the
- * pasting app read access. The URI is built by hand (FileProvider's path strategy) rather than via
- * FileProvider's helpers, and the authority is looked up at runtime so clones work too.
+ * Clipboard images must be content URIs other apps can read. IG ships
+ * androidx.core.content.FileProvider (authority com.instagram.fileprovider on official IG) with
+ * {@code <cache-path name="cache" path="/">} and grantUriPermissions="true", so download into IG's
+ * cache dir and put content://&lt;authority&gt;/cache/&lt;file&gt; on the clipboard. URI built by hand
+ * (FileProvider's path strategy); authority resolved at runtime so clones work too.
  */
 final class ImageClipboard {
 

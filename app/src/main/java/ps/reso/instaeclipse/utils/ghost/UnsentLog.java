@@ -30,10 +30,12 @@ public class UnsentLog {
     public static class Entry {
         public final long time;       // when we captured it (wall clock)
         public final String thread;   // thread id it belongs to (for per-thread filtering)
+        public final String id;       // message id (lets a kept bubble be re-marked after a restart; may be "")
         public final String sender;   // best-effort sender label (may be "")
         public final String text;
-        public Entry(long time, String thread, String sender, String text) {
-            this.time = time; this.thread = thread; this.sender = sender; this.text = text;
+        public Entry(long time, String thread, String id, String sender, String text) {
+            this.time = time; this.thread = thread; this.id = id == null ? "" : id;
+            this.sender = sender; this.text = text;
         }
     }
 
@@ -64,7 +66,7 @@ public class UnsentLog {
             List<Entry> next = new ArrayList<>();
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
-                next.add(new Entry(o.optLong("t"), o.optString("th", ""), o.optString("s", ""), o.optString("m", "")));
+                next.add(new Entry(o.optLong("t"), o.optString("th", ""), o.optString("id", ""), o.optString("s", ""), o.optString("m", "")));
             }
             cache.addAll(next);
         } catch (Throwable t) {
@@ -111,6 +113,7 @@ public class UnsentLog {
             for (Entry entry : entries) {
                 JSONObject object = new JSONObject();
                 object.put("t", entry.time); object.put("th", entry.thread);
+                object.put("id", entry.id);
                 object.put("s", entry.sender); object.put("m", entry.text);
                 array.put(object);
             }
@@ -131,7 +134,7 @@ public class UnsentLog {
     }
 
     /** Add a captured unsent message (deduped against a recent identical text in the same thread). */
-    public static synchronized void add(String thread, String sender, String text) {
+    public static synchronized void add(String thread, String id, String sender, String text) {
         if (text == null || text.isEmpty()) return;
         ensureLoaded();
         String th = thread == null ? "" : thread;
@@ -140,7 +143,7 @@ public class UnsentLog {
             Entry e = cache.get(i);
             if (th.equals(e.thread) && text.equals(e.text)) return;
         }
-        cache.add(new Entry(System.currentTimeMillis(), th, sender == null ? "" : sender, text));
+        cache.add(new Entry(System.currentTimeMillis(), th, id == null ? "" : id, sender == null ? "" : sender, text));
         while (cache.size() > MAX_ENTRIES) cache.remove(0);
         persist();
     }

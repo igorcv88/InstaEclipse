@@ -18,8 +18,8 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 /**
  * Media attached to a comment (#242): photo comments carry a com.instagram.feed.media.Media
  * (media_info / media_comment_info), GIF comments a Giphy schema object whose images expose a
- * real-named getUrl(). Pando-backed schemas keep their data behind getters, so besides fields we
- * also call no-arg getters whose return type is Media or a Comment/Giphy/MediaInfo schema type.
+ * real-named getUrl(). Pando-backed schemas keep data behind getters, so besides fields, no-arg
+ * getters returning Media or a Comment/Giphy/MediaInfo schema type are called too.
  */
 public final class CommentMedia {
 

@@ -32,9 +32,15 @@ public class SettingsManager {
 
         editor.putBoolean("isDevEnabled", FeatureFlags.isDevEnabled);
 
+        // Stop Background Wake-ups (battery)
+        editor.putBoolean("stopBackgroundHeartbeat", FeatureFlags.stopBackgroundHeartbeat);
+        editor.putBoolean("stopUploadAlarm", FeatureFlags.stopUploadAlarm);
+        editor.putBoolean("stopBackgroundPrefetch", FeatureFlags.stopBackgroundPrefetch);
+
         // Ghost Mode
         editor.putBoolean("isGhostModeEnabled", FeatureFlags.isGhostModeEnabled);
         editor.putBoolean("isGhostSeen", FeatureFlags.isGhostSeen);
+        editor.putBoolean("markSeenReadLocally", FeatureFlags.markSeenReadLocally);
         editor.putBoolean("isGhostTyping", FeatureFlags.isGhostTyping);
         editor.putBoolean("isGhostScreenshot", FeatureFlags.isGhostScreenshot);
         editor.putBoolean("isGhostViewOnce", FeatureFlags.isGhostViewOnce);
@@ -47,6 +53,9 @@ public class SettingsManager {
         editor.putBoolean("autoClearCache", FeatureFlags.autoClearCache);
         editor.putInt("autoClearCacheSizeMb", FeatureFlags.autoClearCacheSizeMb);
         editor.putBoolean("removeMetaAI", FeatureFlags.removeMetaAI);
+        editor.putBoolean("groupNotifications", FeatureFlags.groupNotifications);
+        editor.putBoolean("groupNotificationsByType", FeatureFlags.groupNotificationsByType);
+        editor.putString("mutedNotificationChannels", FeatureFlags.mutedNotificationChannels);
         editor.putBoolean("lockDirectMessages", FeatureFlags.lockDirectMessages);
         editor.putString("lockDirectPasscode", FeatureFlags.lockDirectPasscode);
         editor.putString("lockDirectSalt", FeatureFlags.lockDirectSalt);
@@ -56,6 +65,7 @@ public class SettingsManager {
         editor.putBoolean("showHideChatButton", FeatureFlags.showHideChatButton);
         editor.putBoolean("showDeletedMessagesButton", FeatureFlags.showDeletedMessagesButton);
         editor.putBoolean("keepUnsentInChat", FeatureFlags.keepUnsentInChat);
+        editor.putBoolean("hideUnsentLabel", FeatureFlags.hideUnsentLabel);
         editor.putBoolean("downloaderUseOriginal", FeatureFlags.downloaderUseOriginal);
         editor.putInt("downloaderQualityMaxShortSide", FeatureFlags.downloaderQualityMaxShortSide);
         editor.putInt("storyTrayScale", FeatureFlags.storyTrayScale);
@@ -87,13 +97,28 @@ public class SettingsManager {
         editor.putBoolean("disableComments", FeatureFlags.disableComments);
 
         // Clean Feed
+        editor.putBoolean("hideExploreGrid", FeatureFlags.hideExploreGrid);
+        editor.putBoolean("exploreNoPersonalization", FeatureFlags.exploreNoPersonalization);
+        editor.putBoolean("hideSearchSuggestions", FeatureFlags.hideSearchSuggestions);
         editor.putBoolean("hideSuggestionsInFeed", FeatureFlags.hideSuggestionsInFeed);
         editor.putBoolean("hideThreadsSuggestions", FeatureFlags.hideThreadsSuggestions);
+        editor.putBoolean("hideSuggestionsInReels", FeatureFlags.hideSuggestionsInReels);
+        editor.putBoolean("hidePaidPartnerships", FeatureFlags.hidePaidPartnerships);
+        editor.putBoolean("hideAiReels", FeatureFlags.hideAiReels);
+        editor.putBoolean("hideReelsByCaption", FeatureFlags.hideReelsByCaption);
+        editor.putString("reelsBlockedWords", FeatureFlags.reelsBlockedWords);
+        editor.putBoolean("hideReelsByLanguage", FeatureFlags.hideReelsByLanguage);
+        editor.putString("reelsBlockedLanguages", FeatureFlags.reelsBlockedLanguages);
+        editor.putBoolean("hideLowViewReels", FeatureFlags.hideLowViewReels);
+        editor.putInt("reelMinViews", FeatureFlags.reelMinViews);
+        editor.putInt("reelMinLikes", FeatureFlags.reelMinLikes);
         editor.putBoolean("hideLikedPosts", FeatureFlags.hideLikedPosts);
         editor.putBoolean("confirmFeedRefresh", FeatureFlags.confirmFeedRefresh);
         editor.putBoolean("hideCommunityNotes", FeatureFlags.hideCommunityNotes);
         editor.putBoolean("followingOnlyFeed", FeatureFlags.followingOnlyFeed);
         editor.putBoolean("hidePlusUpsells", FeatureFlags.hidePlusUpsells);
+        editor.putBoolean("freeAppIcons", FeatureFlags.freeAppIcons);
+        editor.putBoolean("glassTabBar", FeatureFlags.glassTabBar);
         editor.putBoolean("expandCaptions", FeatureFlags.expandCaptions);
         editor.putBoolean("offerAudioDownload", FeatureFlags.offerAudioDownload);
         editor.putBoolean("enableVoiceDownload", FeatureFlags.enableVoiceDownload);
@@ -102,14 +127,22 @@ public class SettingsManager {
         editor.putBoolean("offerCopyImage", FeatureFlags.offerCopyImage);
         editor.putBoolean("offerMediaInfo", FeatureFlags.offerMediaInfo);
         editor.putBoolean("offerPlaybackSpeed", FeatureFlags.offerPlaybackSpeed);
+        editor.putBoolean("keepVideoPlayingBackground", FeatureFlags.keepVideoPlayingBackground);
+        editor.putBoolean("videoPictureInPicture", FeatureFlags.videoPictureInPicture);
         editor.putBoolean("maxUploadQuality", FeatureFlags.maxUploadQuality);
         editor.putBoolean("forceReelScrubber", FeatureFlags.forceReelScrubber);
         editor.putBoolean("holdLeftSlowMotion", FeatureFlags.holdLeftSlowMotion);
+        editor.putBoolean("feedVideoTapPause", FeatureFlags.feedVideoTapPause);
+        editor.putBoolean("feedVideoSeekBar", FeatureFlags.feedVideoSeekBar);
+        editor.putBoolean("feedVideoHold2x", FeatureFlags.feedVideoHold2x);
+        editor.putBoolean("feedVideoDoubleTapSkip", FeatureFlags.feedVideoDoubleTapSkip);
+        editor.putInt("feedVideoSkipSeconds", FeatureFlags.feedVideoSkipSeconds);
         editor.putBoolean("keepEditHistory", FeatureFlags.keepEditHistory);
         editor.putBoolean("jumpToFirstMessage", FeatureFlags.jumpToFirstMessage);
         editor.putBoolean("translateMessages", FeatureFlags.translateMessages);
         editor.putBoolean("bulkUnsend", FeatureFlags.bulkUnsend);
         editor.putBoolean("chatExport", FeatureFlags.chatExport);
+        editor.putBoolean("voiceMessagesList", FeatureFlags.voiceMessagesList);
         editor.putBoolean("hideTabHome", FeatureFlags.hideTabHome);
         editor.putBoolean("hideTabReels", FeatureFlags.hideTabReels);
         editor.putBoolean("hideTabCreate", FeatureFlags.hideTabCreate);
@@ -123,6 +156,18 @@ public class SettingsManager {
         editor.putBoolean("hideDmBlend", FeatureFlags.hideDmBlend);
         editor.putBoolean("readReceiptChats", FeatureFlags.readReceiptChats);
         editor.putBoolean("hideThreadsButton", FeatureFlags.hideThreadsButton);
+        editor.putBoolean("hideProfileHighlights", FeatureFlags.hideProfileHighlights);
+        editor.putBoolean("hideProfileSong", FeatureFlags.hideProfileSong);
+        editor.putBoolean("hideProfileBioLinks", FeatureFlags.hideProfileBioLinks);
+        editor.putBoolean("hideProfileInterests", FeatureFlags.hideProfileInterests);
+        editor.putBoolean("hideProfileBanners", FeatureFlags.hideProfileBanners);
+        editor.putBoolean("hideFeedFollowButton", FeatureFlags.hideFeedFollowButton);
+        editor.putBoolean("hideFeedSaveButton", FeatureFlags.hideFeedSaveButton);
+        editor.putBoolean("hideFeedLikeButton", FeatureFlags.hideFeedLikeButton);
+        editor.putBoolean("hideFeedActivityBubbles", FeatureFlags.hideFeedActivityBubbles);
+        editor.putBoolean("hideFeedAudioIcon", FeatureFlags.hideFeedAudioIcon);
+        editor.putBoolean("hideFeedMadeWithEdits", FeatureFlags.hideFeedMadeWithEdits);
+        editor.putBoolean("hideFeedCaptions", FeatureFlags.hideFeedCaptions);
 
         // Ads
         editor.putBoolean("isAdBlockEnabled", FeatureFlags.isAdBlockEnabled);
@@ -137,6 +182,9 @@ public class SettingsManager {
         editor.putBoolean("spoofLastSeen", FeatureFlags.spoofLastSeen);
         editor.putBoolean("disableSearchHistory", FeatureFlags.disableSearchHistory);
         editor.putBoolean("confirmCalls", FeatureFlags.confirmCalls);
+        editor.putInt("callBlockMode", FeatureFlags.callBlockMode);
+        editor.putString("callBlockAccounts", FeatureFlags.callBlockAccounts);
+        editor.putString("callBlockChats", FeatureFlags.callBlockChats);
         editor.putBoolean("spoofLocation", FeatureFlags.spoofLocation);
         editor.putString("spoofLat", String.valueOf(FeatureFlags.spoofLat));
         editor.putString("spoofLng", String.valueOf(FeatureFlags.spoofLng));
@@ -159,6 +207,8 @@ public class SettingsManager {
         editor.putString("spoofName", FeatureFlags.spoofName);
         editor.putString("spoofUsername", FeatureFlags.spoofUsername);
         editor.putString("spoofBio", FeatureFlags.spoofBio);
+        editor.putString("spoofTargetId", FeatureFlags.spoofTargetId);
+        editor.putBoolean("spoofPrivate", FeatureFlags.spoofPrivate);
         editor.putString("spoofAvatar", FeatureFlags.spoofAvatar);
         editor.putBoolean("profileAnalyzer", FeatureFlags.profileAnalyzer);
         editor.putBoolean("profileFollowsYouLabel", FeatureFlags.profileFollowsYouLabel);
@@ -191,6 +241,9 @@ public class SettingsManager {
         editor.putBoolean("downloaderAddTimestamp", FeatureFlags.downloaderAddTimestamp);
         editor.putBoolean("copyMediaLink", FeatureFlags.copyMediaLink);
         editor.putBoolean("saveInstants", FeatureFlags.saveInstants);
+        editor.putBoolean("keepInstantHistory", FeatureFlags.keepInstantHistory);
+        editor.putString("pinnedStoryUsers", FeatureFlags.pinnedStoryUsers);
+        editor.putInt("pinnedStoryLimit", FeatureFlags.pinnedStoryLimit);
         editor.putBoolean("uploadInstants", FeatureFlags.uploadInstants);
         editor.putBoolean("cacheStories", FeatureFlags.cacheStories);
         editor.putBoolean("customFontEnabled", FeatureFlags.customFontEnabled);
@@ -210,6 +263,10 @@ public class SettingsManager {
         editor.putInt("themePresetId", FeatureFlags.themePresetId);
         editor.putInt("themeLightPresetId", FeatureFlags.themeLightPresetId);
         editor.putString("themePaletteJson", FeatureFlags.themePaletteJson);
+        editor.putBoolean("themeDynamicAccent", FeatureFlags.themeDynamicAccent);
+        editor.putBoolean("themeOledSurfaces", FeatureFlags.themeOledSurfaces);
+        editor.putBoolean("themeAccentOnly", FeatureFlags.themeAccentOnly);
+        editor.putInt("themeAccentColor", FeatureFlags.themeAccentColor);
 
         for (String flag : ExtrasFeatures.flags()) editor.putBoolean(flag, ExtrasFeatures.get(flag));
 
@@ -249,9 +306,15 @@ public class SettingsManager {
 
         FeatureFlags.isDevEnabled = prefs.getBoolean("isDevEnabled", false);
 
+        // Stop Background Wake-ups (battery)
+        FeatureFlags.stopBackgroundHeartbeat = prefs.getBoolean("stopBackgroundHeartbeat", false);
+        FeatureFlags.stopUploadAlarm = prefs.getBoolean("stopUploadAlarm", false);
+        FeatureFlags.stopBackgroundPrefetch = prefs.getBoolean("stopBackgroundPrefetch", false);
+
         // Ghost Mode
         FeatureFlags.isGhostModeEnabled = prefs.getBoolean("isGhostModeEnabled", false);
         FeatureFlags.isGhostSeen = prefs.getBoolean("isGhostSeen", false);
+        FeatureFlags.markSeenReadLocally = prefs.getBoolean("markSeenReadLocally", true);
         FeatureFlags.isGhostTyping = prefs.getBoolean("isGhostTyping", false);
         FeatureFlags.isGhostScreenshot = prefs.getBoolean("isGhostScreenshot", false);
         FeatureFlags.isGhostViewOnce = prefs.getBoolean("isGhostViewOnce", false);
@@ -264,6 +327,9 @@ public class SettingsManager {
         FeatureFlags.autoClearCache = prefs.getBoolean("autoClearCache", false);
         FeatureFlags.autoClearCacheSizeMb = prefs.getInt("autoClearCacheSizeMb", 100);
         FeatureFlags.removeMetaAI = prefs.getBoolean("removeMetaAI", false);
+        FeatureFlags.groupNotifications = prefs.getBoolean("groupNotifications", false);
+        FeatureFlags.groupNotificationsByType = prefs.getBoolean("groupNotificationsByType", false);
+        FeatureFlags.mutedNotificationChannels = prefs.getString("mutedNotificationChannels", "");
         FeatureFlags.lockDirectMessages = prefs.getBoolean("lockDirectMessages", false);
         FeatureFlags.lockDirectPasscode = prefs.getString("lockDirectPasscode", "");
         FeatureFlags.lockDirectSalt = prefs.getString("lockDirectSalt", "");
@@ -273,6 +339,7 @@ public class SettingsManager {
         FeatureFlags.showHideChatButton = prefs.getBoolean("showHideChatButton", false);
         FeatureFlags.showDeletedMessagesButton = prefs.getBoolean("showDeletedMessagesButton", false);
         FeatureFlags.keepUnsentInChat = prefs.getBoolean("keepUnsentInChat", false);
+        FeatureFlags.hideUnsentLabel = prefs.getBoolean("hideUnsentLabel", false);
         FeatureFlags.downloaderUseOriginal = prefs.getBoolean("downloaderUseOriginal", true);
         FeatureFlags.downloaderQualityMaxShortSide = prefs.getInt("downloaderQualityMaxShortSide", 0);
         FeatureFlags.storyTrayScale = prefs.getInt("storyTrayScale", 100);
@@ -304,13 +371,28 @@ public class SettingsManager {
         FeatureFlags.disableComments = prefs.getBoolean("disableComments", false);
 
         // Clean Feed
+        FeatureFlags.hideExploreGrid = prefs.getBoolean("hideExploreGrid", false);
+        FeatureFlags.exploreNoPersonalization = prefs.getBoolean("exploreNoPersonalization", false);
+        FeatureFlags.hideSearchSuggestions = prefs.getBoolean("hideSearchSuggestions", false);
         FeatureFlags.hideSuggestionsInFeed = prefs.getBoolean("hideSuggestionsInFeed", false);
         FeatureFlags.hideThreadsSuggestions = prefs.getBoolean("hideThreadsSuggestions", false);
+        FeatureFlags.hideSuggestionsInReels = prefs.getBoolean("hideSuggestionsInReels", false);
+        FeatureFlags.hidePaidPartnerships = prefs.getBoolean("hidePaidPartnerships", false);
+        FeatureFlags.hideAiReels = prefs.getBoolean("hideAiReels", false);
+        FeatureFlags.hideReelsByCaption = prefs.getBoolean("hideReelsByCaption", false);
+        FeatureFlags.reelsBlockedWords = prefs.getString("reelsBlockedWords", "");
+        FeatureFlags.hideReelsByLanguage = prefs.getBoolean("hideReelsByLanguage", false);
+        FeatureFlags.reelsBlockedLanguages = prefs.getString("reelsBlockedLanguages", "");
+        FeatureFlags.hideLowViewReels = prefs.getBoolean("hideLowViewReels", false);
+        FeatureFlags.reelMinViews = prefs.getInt("reelMinViews", 0);
+        FeatureFlags.reelMinLikes = prefs.getInt("reelMinLikes", 0);
         FeatureFlags.hideLikedPosts = prefs.getBoolean("hideLikedPosts", false);
         FeatureFlags.confirmFeedRefresh = prefs.getBoolean("confirmFeedRefresh", false);
         FeatureFlags.hideCommunityNotes = prefs.getBoolean("hideCommunityNotes", false);
         FeatureFlags.followingOnlyFeed = prefs.getBoolean("followingOnlyFeed", false);
         FeatureFlags.hidePlusUpsells = prefs.getBoolean("hidePlusUpsells", false);
+        FeatureFlags.freeAppIcons = prefs.getBoolean("freeAppIcons", false);
+        FeatureFlags.glassTabBar = prefs.getBoolean("glassTabBar", false);
         FeatureFlags.expandCaptions = prefs.getBoolean("expandCaptions", false);
         FeatureFlags.offerAudioDownload = prefs.getBoolean("offerAudioDownload", false);
         FeatureFlags.enableVoiceDownload = prefs.getBoolean("enableVoiceDownload", false);
@@ -319,14 +401,22 @@ public class SettingsManager {
         FeatureFlags.offerCopyImage = prefs.getBoolean("offerCopyImage", false);
         FeatureFlags.offerMediaInfo = prefs.getBoolean("offerMediaInfo", false);
         FeatureFlags.offerPlaybackSpeed = prefs.getBoolean("offerPlaybackSpeed", false);
+        FeatureFlags.keepVideoPlayingBackground = prefs.getBoolean("keepVideoPlayingBackground", false);
+        FeatureFlags.videoPictureInPicture = prefs.getBoolean("videoPictureInPicture", false);
         FeatureFlags.maxUploadQuality = prefs.getBoolean("maxUploadQuality", false);
         FeatureFlags.forceReelScrubber = prefs.getBoolean("forceReelScrubber", false);
         FeatureFlags.holdLeftSlowMotion = prefs.getBoolean("holdLeftSlowMotion", false);
+        FeatureFlags.feedVideoTapPause = prefs.getBoolean("feedVideoTapPause", false);
+        FeatureFlags.feedVideoSeekBar = prefs.getBoolean("feedVideoSeekBar", false);
+        FeatureFlags.feedVideoHold2x = prefs.getBoolean("feedVideoHold2x", false);
+        FeatureFlags.feedVideoDoubleTapSkip = prefs.getBoolean("feedVideoDoubleTapSkip", false);
+        FeatureFlags.feedVideoSkipSeconds = prefs.getInt("feedVideoSkipSeconds", 10);
         FeatureFlags.keepEditHistory = prefs.getBoolean("keepEditHistory", false);
         FeatureFlags.jumpToFirstMessage = prefs.getBoolean("jumpToFirstMessage", false);
         FeatureFlags.translateMessages = prefs.getBoolean("translateMessages", false);
         FeatureFlags.bulkUnsend = prefs.getBoolean("bulkUnsend", false);
         FeatureFlags.chatExport = prefs.getBoolean("chatExport", false);
+        FeatureFlags.voiceMessagesList = prefs.getBoolean("voiceMessagesList", false);
         FeatureFlags.hideTabHome = prefs.getBoolean("hideTabHome", false);
         FeatureFlags.hideTabReels = prefs.getBoolean("hideTabReels", false);
         FeatureFlags.hideTabCreate = prefs.getBoolean("hideTabCreate", false);
@@ -340,6 +430,18 @@ public class SettingsManager {
         FeatureFlags.hideDmBlend = prefs.getBoolean("hideDmBlend", false);
         FeatureFlags.readReceiptChats = prefs.getBoolean("readReceiptChats", false);
         FeatureFlags.hideThreadsButton = prefs.getBoolean("hideThreadsButton", false);
+        FeatureFlags.hideProfileHighlights = prefs.getBoolean("hideProfileHighlights", false);
+        FeatureFlags.hideProfileSong = prefs.getBoolean("hideProfileSong", false);
+        FeatureFlags.hideProfileBioLinks = prefs.getBoolean("hideProfileBioLinks", false);
+        FeatureFlags.hideProfileInterests = prefs.getBoolean("hideProfileInterests", false);
+        FeatureFlags.hideProfileBanners = prefs.getBoolean("hideProfileBanners", false);
+        FeatureFlags.hideFeedFollowButton = prefs.getBoolean("hideFeedFollowButton", false);
+        FeatureFlags.hideFeedSaveButton = prefs.getBoolean("hideFeedSaveButton", false);
+        FeatureFlags.hideFeedLikeButton = prefs.getBoolean("hideFeedLikeButton", false);
+        FeatureFlags.hideFeedActivityBubbles = prefs.getBoolean("hideFeedActivityBubbles", false);
+        FeatureFlags.hideFeedAudioIcon = prefs.getBoolean("hideFeedAudioIcon", false);
+        FeatureFlags.hideFeedMadeWithEdits = prefs.getBoolean("hideFeedMadeWithEdits", false);
+        FeatureFlags.hideFeedCaptions = prefs.getBoolean("hideFeedCaptions", false);
 
         // Ads
         FeatureFlags.isAdBlockEnabled = prefs.getBoolean("isAdBlockEnabled", false);
@@ -354,6 +456,9 @@ public class SettingsManager {
         FeatureFlags.spoofLastSeen = prefs.getBoolean("spoofLastSeen", false);
         FeatureFlags.disableSearchHistory = prefs.getBoolean("disableSearchHistory", false);
         FeatureFlags.confirmCalls = prefs.getBoolean("confirmCalls", false);
+        FeatureFlags.callBlockMode = prefs.getInt("callBlockMode", 0);
+        FeatureFlags.callBlockAccounts = prefs.getString("callBlockAccounts", "");
+        FeatureFlags.callBlockChats = prefs.getString("callBlockChats", "");
         FeatureFlags.spoofLocation = prefs.getBoolean("spoofLocation", false);
         FeatureFlags.spoofLat = readDoublePref(prefs, "spoofLat", 0.0);
         FeatureFlags.spoofLng = readDoublePref(prefs, "spoofLng", 0.0);
@@ -376,6 +481,8 @@ public class SettingsManager {
         FeatureFlags.spoofName = prefs.getString("spoofName", "");
         FeatureFlags.spoofUsername = prefs.getString("spoofUsername", "");
         FeatureFlags.spoofBio = prefs.getString("spoofBio", "");
+        FeatureFlags.spoofTargetId = prefs.getString("spoofTargetId", "");
+        FeatureFlags.spoofPrivate = prefs.getBoolean("spoofPrivate", false);
         FeatureFlags.spoofAvatar = prefs.getString("spoofAvatar", "");
         FeatureFlags.profileAnalyzer = prefs.getBoolean("profileAnalyzer", false);
         FeatureFlags.profileFollowsYouLabel = prefs.getBoolean("profileFollowsYouLabel", false);
@@ -408,6 +515,9 @@ public class SettingsManager {
         FeatureFlags.downloaderAddTimestamp   = prefs.getBoolean("downloaderAddTimestamp", false);
         FeatureFlags.copyMediaLink            = prefs.getBoolean("copyMediaLink", false);
         FeatureFlags.saveInstants             = prefs.getBoolean("saveInstants", false);
+        FeatureFlags.keepInstantHistory       = prefs.getBoolean("keepInstantHistory", false);
+        FeatureFlags.pinnedStoryUsers         = prefs.getString("pinnedStoryUsers", "");
+        FeatureFlags.pinnedStoryLimit         = prefs.getInt("pinnedStoryLimit", 30);
         FeatureFlags.uploadInstants           = prefs.getBoolean("uploadInstants", false);
         FeatureFlags.cacheStories             = prefs.getBoolean("cacheStories", false);
         FeatureFlags.customFontEnabled        = prefs.getBoolean("customFontEnabled", false);
@@ -438,6 +548,10 @@ public class SettingsManager {
                     .apply();
         }
         FeatureFlags.themePaletteJson = prefs.getString("themePaletteJson", "");
+        FeatureFlags.themeDynamicAccent = prefs.getBoolean("themeDynamicAccent", false);
+        FeatureFlags.themeOledSurfaces = prefs.getBoolean("themeOledSurfaces", false);
+        FeatureFlags.themeAccentOnly = prefs.getBoolean("themeAccentOnly", false);
+        FeatureFlags.themeAccentColor = prefs.getInt("themeAccentColor", 0xFF3897F0);
 
         for (String flag : ExtrasFeatures.flags()) ExtrasFeatures.set(flag, prefs.getBoolean(flag, false));
 

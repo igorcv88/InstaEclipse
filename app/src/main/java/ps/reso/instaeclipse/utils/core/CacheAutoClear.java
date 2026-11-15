@@ -11,21 +11,29 @@ import ps.reso.instaeclipse.utils.feature.FeatureFlags;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Auto-clears Instagram's cache when the app is closed/backgrounded, if the cache is over a
- * user-set size (GitHub feature request).
+ * Auto-clears Instagram's cache on background if it's over a user-set size (GitHub feature
+ * request).
  *
- * Clearing runs when the app goes to the background — i.e. when the last visible activity stops —
- * so nothing on screen references the files being deleted (this avoids the broken-image
- * placeholders that mid-session clearing caused). When the user returns, Instagram simply
- * rebuilds the cache.
+ * Runs when the last visible activity stops, so nothing on screen references the deleted files
+ * (mid-session clearing caused broken-image placeholders); IG rebuilds the cache on return.
  *
- * Instagram keeps almost nothing in getExternalCacheDir(); the bulk of its image/video cache
- * lives under getCacheDir() (Fresco image pipeline, exoplayer, etc.) and in some builds under
- * subdirs of filesDir(). We therefore measure and clear the standard cache dirs AND any obvious
- * cache-like subdirectory of filesDir (names containing "cache"). The size check uses the OS's
- * authoritative cache figure (what Android Settings shows), which is cache IG safely regenerates.
+ * IG keeps almost nothing in getExternalCacheDir(); the bulk of its image/video cache lives
+ * under getCacheDir() (Fresco, exoplayer) and in some builds under subdirs of filesDir(). So the
+ * standard cache dirs and any cache-like subdir of filesDir (name contains "cache") are measured
+ * and cleared. Size check uses the OS cache figure (what Android Settings shows), cache IG
+ * safely regenerates.
  */
 public class CacheAutoClear {
+
+    /**
+     * Data subdirs (under the app data dir, not getCacheDir()) that are pure telemetry/analytics and
+     * safe to wipe — IG regenerates them and nothing functional is lost. app_analytics alone is
+     * routinely the single biggest consumer (hundreds of MB), and the OS counts it as "data", not
+     * "cache", so it's invisible to the cache figure; we size and clear it explicitly.
+     */
+    private static final String[] JUNK_DATA_DIRS = {
+            "app_analytics", "app_errorreporting", "app_qpl", "app_call_stats_v2",
+            "app_file_poolreports", "app_file_poolcollector", "insta_crash_log", "crash_log"};
 
     private static volatile boolean installed = false;
     private static int startedActivities = 0;           // >0 = app in foreground
@@ -70,14 +78,14 @@ public class CacheAutoClear {
                 int limitMb = FeatureFlags.autoClearCacheSizeMb > 0 ? FeatureFlags.autoClearCacheSizeMb : 100;
                 long limit = (long) limitMb * 1024 * 1024;
 
-                // Measure with the OS's authoritative cache figure (matches what Android Settings
-                // shows and counts cache the app registered on all volumes); fall back to summing
-                // the cache dirs directly when StorageStatsManager is unavailable.
+                // OS cache figure (matches Android Settings, counts all volumes); fall back to
+                // summing the cache dirs when StorageStatsManager is unavailable.
                 File[] targets = cacheTargets(app);
                 long osCache = osCacheBytes(app);
                 long dirTotal = 0;
                 for (File t : targets) dirTotal += dirSize(t);
-                long measured = osCache > 0 ? osCache : dirTotal;
+                // Include the junk-data dirs (app_analytics etc.) the OS cache figure leaves out.
+                long measured = Math.max(osCache, dirTotal);
 
                 ModuleLog.line("(IE|CacheAutoClear) backgrounded — cache=" + (measured / (1024 * 1024))
                         + "MB (limit " + limitMb + "MB)");
@@ -94,9 +102,9 @@ public class CacheAutoClear {
     }
 
     /**
-     * The set of directories treated as "cache": the standard internal + external cache dirs,
-     * plus any first-level subdirectory of filesDir whose name looks cache-like (some IG builds
-     * put the Fresco/media cache under files/ rather than cache/). code_cache is included too.
+     * Dirs treated as cache: internal + external cache dirs, code_cache, and any first-level
+     * filesDir subdir whose name looks cache-like (some IG builds put Fresco/media cache under
+     * files/ rather than cache/).
      */
     private static File[] cacheTargets(Context app) {
         java.util.LinkedHashSet<File> out = new java.util.LinkedHashSet<>();
@@ -112,7 +120,47 @@ public class CacheAutoClear {
                 }
             }
         } catch (Throwable ignored) {}
+        // Telemetry/analytics data dirs (app_analytics is the big one) under the app data dir.
+        File dataDir = dataDir(app);
+        if (dataDir != null) {
+            for (String name : JUNK_DATA_DIRS) addIfDir(out, new File(dataDir, name));
+        }
         return out.toArray(new File[0]);
+    }
+
+    /** The app's /data/data/<pkg> dir (parent of getCacheDir), for reaching data-side junk dirs. */
+    private static File dataDir(Context app) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && app.getDataDir() != null) {
+                return app.getDataDir();
+            }
+        } catch (Throwable ignored) {}
+        File cache = app.getCacheDir();
+        return cache != null ? cache.getParentFile() : null;
+    }
+
+    /**
+     * Clear Instagram's media cache + telemetry/analytics junk now (manual "Clear now"), off the UI
+     * thread; {@code onDone} runs on the main thread when finished (e.g. to restart Instagram).
+     */
+    public static void clearNow(Context ctx, Runnable onDone) {
+        if (ctx == null) return;
+        final Context app = ctx.getApplicationContext();
+        new Thread(() -> {
+            try {
+                long freed = 0;
+                for (File t : cacheTargets(app)) { freed += dirSize(t); clearContents(t); }
+                ModuleLog.line("(IE|CacheAutoClear) ✅ manual clear freed ~" + (freed / (1024 * 1024)) + "MB");
+            } catch (Throwable t) {
+                ModuleLog.line("(IE|CacheAutoClear) ❌ manual clear: " + t);
+            } finally {
+                if (onDone != null) {
+                    try {
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(onDone);
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }, "ie-cacheclear-now").start();
     }
 
     private static void addIfDir(java.util.Set<File> set, File d) {

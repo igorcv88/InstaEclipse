@@ -17,12 +17,11 @@ import java.util.Map;
 /**
  * Profile analyzer watchlist: other profiles whose Followers and Following lists you check.
  *
- * Like FollowersHistory, but for a watched profile B and both of its lists. Each analysis is a full
- * load of B's Followers and Following (FollowListExportHook drives IG's pager); both lists are kept
- * as B's last snapshot (id → {username, full name}) and each analysis is compared with it:
- * who B newly followed / unfollowed, who newly followed B / stopped following B. Everything lives in
- * Instagram's private files, per logged-in account: an index (watched profiles and their counts) and
- * one file per watched profile (snapshot and event log, newest first, capped).
+ * Like FollowersHistory but for a watched profile B and both its lists. Each analysis fully loads
+ * B's Followers and Following (FollowListExportHook drives IG's pager), snapshots them (id →
+ * {username, full name}) and diffs: who B newly followed / unfollowed, who gained / lost B. Stored in
+ * IG's private files per account: an index (watched profiles + counts) and one file per profile
+ * (snapshot + capped event log, newest first).
  */
 public final class WatchlistStore {
 

@@ -37,7 +37,7 @@ public class GhostEmojiManager {
         }
     }
 
-    /** Recursively finds the first ImageView in the view tree. */
+    /** First ImageView in the subtree, depth-first. */
     private static ImageView findImageView(View view) {
         if (view instanceof ImageView iv) return iv;
         if (view instanceof ViewGroup vg) {

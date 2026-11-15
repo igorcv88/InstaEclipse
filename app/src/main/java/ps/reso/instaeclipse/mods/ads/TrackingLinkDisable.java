@@ -74,9 +74,9 @@ public class TrackingLinkDisable {
         } catch (Throwable ignored) {}
 
         // 4. System share sheet (android ChooserActivity) -- its built-in "Copy" button copies the
-        // target Intent's EXTRA_TEXT in the SYSTEM process, so our in-app clipboard hooks never see
-        // it. Sanitize the target Intent here, at the choke point where IG builds the chooser (runs
-        // in IG's process), which fixes both the system "Copy" and every "Share to <app>" target.
+        // target Intent's EXTRA_TEXT in the SYSTEM process, so the in-app clipboard hooks never
+        // see it. Sanitize the target Intent here, where IG builds the chooser (IG's process); fixes
+        // both the system "Copy" and every "Share to <app>" target.
         XC_MethodHook chooserHook = new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);

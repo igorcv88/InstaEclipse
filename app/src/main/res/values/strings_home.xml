@@ -17,6 +17,7 @@
     <string name="home_action_launch">Launch</string>
     <string name="home_action_restart">Restart</string>
     <string name="home_action_download">Get APK</string>
+    <string name="home_action_patch">Patch</string>
     <string name="home_restart_done">Instagram restarted</string>
 
     <string name="home_shortcuts_edit">Edit shortcuts</string>

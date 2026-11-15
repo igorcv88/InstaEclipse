@@ -29,9 +29,11 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
  * the screen and shows more items; the container's height shrinks to match, so the feed moves up.
  * Android maps touches through the scale, so taps land on the right story.
  *
- * <p>Ring color: every story ring gradient is built by GradientSpinner's static
- * (GradientSpinner, float[], float[], float[], int[] colors, int, int) -> LinearGradient; the colors
- * are swapped there. Close Friends' green ring is left alone, so it keeps its meaning.
+ * <p>Ring color: every story ring gradient is built by a GradientSpinner method that returns a
+ * LinearGradient from an int[] of colors. On IG 455 this is the private instance method
+ * (float[], float[], float[], int[] colors, int, int); on IG 452 and earlier it was the static
+ * (GradientSpinner, float[], float[], float[], int[] colors, int, int). The colors are swapped
+ * there. Close Friends' green ring is left alone, so it keeps its meaning.
  */
 public final class StoryTrayHook {
 
@@ -50,30 +52,48 @@ public final class StoryTrayHook {
     public static void install(ClassLoader cl) {
         try {
             Class<?> spinner = cl.loadClass(SPINNER);
-            int hooked = 0;
-            for (Method m : ps.reso.instaeclipse.utils.core.SafeReflect.methods(spinner)) {
-                if (!Modifier.isStatic(m.getModifiers()) || m.getReturnType() != android.graphics.LinearGradient.class) continue;
-                int colorsArg = -1;
-                Class<?>[] p = m.getParameterTypes();
-                for (int i = 0; i < p.length; i++) if (p[i] == int[].class) colorsArg = i;
-                if (colorsArg < 0) continue;
-                final int arg = colorsArg;
-                XposedBridge.hookMethod(m, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
-                        int[] custom = parseColors(FeatureFlags.storyRingColor);
-                        if (custom == null || !(param.args[arg] instanceof int[] colors) || colors.length == 0) return;
-                        if (isCloseFriends(colors)) return;
-                        param.args[arg] = spread(custom, colors.length);
-                    }
-                });
-                hooked++;
-            }
+            // New anchor first (IG 455+): the ring LinearGradient builder is now a private INSTANCE
+            // method on GradientSpinner. Fall back to the old anchor (IG <=452): the same builder as
+            // a STATIC method taking GradientSpinner as its first parameter. "ring gradient hooks=0"
+            // only means a genuine miss after both shapes come up empty.
+            int hooked = hookRingGradient(spinner, false);
+            if (hooked == 0) hooked = hookRingGradient(spinner, true);
             ModuleLog.line(TAG + "ring gradient hooks=" + hooked);
             if (hooked > 0) FeatureStatusTracker.setHooked("StoryRingColor");
         } catch (Throwable t) {
             ModuleLog.line(TAG + "❌ ring: " + t);
         }
+    }
+
+    /**
+     * Hooks every GradientSpinner method that returns a LinearGradient from an int[] of colors and
+     * whose static-ness matches {@code wantStatic}, swapping the colors in before the draw. The
+     * int[] index comes from the method's own parameter list, which (like Xposed's {@code args})
+     * excludes the implicit {@code this}, so the same index is correct for instance and static
+     * forms. Returns how many were hooked.
+     */
+    private static int hookRingGradient(Class<?> spinner, boolean wantStatic) {
+        int hooked = 0;
+        for (Method m : ps.reso.instaeclipse.utils.core.SafeReflect.methods(spinner)) {
+            if (Modifier.isStatic(m.getModifiers()) != wantStatic) continue;
+            if (m.getReturnType() != android.graphics.LinearGradient.class) continue;
+            int colorsArg = -1;
+            Class<?>[] p = m.getParameterTypes();
+            for (int i = 0; i < p.length; i++) if (p[i] == int[].class) colorsArg = i;
+            if (colorsArg < 0) continue;
+            final int arg = colorsArg;
+            XposedBridge.hookMethod(m, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
+                    int[] custom = parseColors(FeatureFlags.storyRingColor);
+                    if (custom == null || !(param.args[arg] instanceof int[] colors) || colors.length == 0) return;
+                    if (isCloseFriends(colors)) return;
+                    param.args[arg] = spread(custom, colors.length);
+                }
+            });
+            hooked++;
+        }
+        return hooked;
     }
 
     // ---- ring color ----

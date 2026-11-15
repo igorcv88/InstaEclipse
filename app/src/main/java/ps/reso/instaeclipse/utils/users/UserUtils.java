@@ -9,7 +9,7 @@ public class UserUtils {
     public static String callUsernameGetter(Object user) {
         if (user == null) return null;
 
-        // 1. Try the method DexKit resolved
+        // method DexKit resolved
         if (userUsernameGetter != null) {
             try {
                 Object r = userUsernameGetter.invoke(user);
@@ -19,14 +19,14 @@ public class UserUtils {
             } catch (Throwable ignored) {}
         }
 
-        // 2. Fallback: DexKit was wrong. Scan for the real lowercase username method.
+        // fallback: DexKit was wrong; scan for the real lowercase username method
         for (Method m : ps.reso.instaeclipse.utils.core.SafeReflect.methods(user.getClass())) {
             if (m.getParameterCount() != 0 || !m.getReturnType().equals(String.class)) continue;
             try {
                 m.setAccessible(true);
                 Object r = m.invoke(user);
                 if (r instanceof String s && isValidUsername(s)) {
-                    userUsernameGetter = m; // Cache the correct method
+                    userUsernameGetter = m; // cache it
                     return s;
                 }
             } catch (Throwable ignored) {}
@@ -36,7 +36,7 @@ public class UserUtils {
 
     public static boolean isValidUsername(String s) {
         if (s == null || s.isEmpty()) return false;
-        // Rejects Caps, Spaces, and Arabic. Accepts only valid IG usernames.
+        // only lowercase IG usernames (rejects caps, spaces, arabic)
         return s.matches("^[a-z0-9._]{2,30}$");
     }
 }

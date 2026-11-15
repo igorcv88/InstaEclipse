@@ -14,4 +14,63 @@
     <string name="help_lspatch_title">LSPatch (JingMatrix)</string>
     <string name="help_lspatch_sub">Not rooted? Install this</string>
     <string name="help_lspatch_guide">Follow the setup guide</string>
+
+    <!-- Eclipse Mods signature (shared across all Eclipse mods) -->
+    <string name="eclipse_mods_wordmark">✦  ECLIPSE MODS  ✦</string>
+    <string name="eclipse_mods_tagline">Part of the Eclipse Mods collection</string>
+    <string name="eclipse_mods_disclaimer">InstaEclipse by ReSo · not affiliated with Instagram</string>
+
+    <!-- No-root Instagram patcher -->
+    <string name="patch_title">Patch Instagram (no root)</string>
+    <string name="patch_intro">Patches your Instagram so InstaEclipse loads without root, keeping Instagram\'s original signature.</string>
+    <string name="patch_integrity_note">This does not bypass Play Integrity.</string>
+    <string name="patch_choose_apk">Choose Instagram APK(s)</string>
+    <string name="patch_no_selection">No APK chosen yet.</string>
+    <string name="patch_selected">%1$d file(s): %2$s</string>
+    <string name="patch_run">Patch and install</string>
+    <string name="patch_need_apk">Pick at least one Instagram APK first.</string>
+    <string name="patch_log_label">Progress</string>
+    <string name="patch_log_empty">Steps will appear here.</string>
+    <string name="patch_failed">Patch failed: %1$s</string>
+    <string name="patch_install_success">Instagram installed.</string>
+    <string name="patch_install_failed">Install failed: %1$s</string>
+    <string name="patch_step_copy">Copying the chosen APK(s)</string>
+    <string name="patch_step_unbundle">Unpacking %1$s</string>
+    <string name="patch_step_install">Starting the installer</string>
+    <string name="patch_step_done">Done. Confirm the install when prompted.</string>
+    <string name="patch_err_no_apk">No APK found in the selection.</string>
+
+    <!-- Get-APK shortcut moved into the patcher. -->
+    <string name="patch_get_apk">Get Instagram APK</string>
+    <string name="patch_get_apk_hint">Don\'t have the APK? Download the tested version, then pick it above.</string>
+
+    <!-- Determinate progress + terminal states. -->
+    <string name="patch_percent">%1$d%%</string>
+    <string name="patch_status_idle">Idle</string>
+    <string name="patch_step_waiting">Waiting for you to confirm the install…</string>
+    <string name="patch_installed_title">Instagram patched &amp; installed</string>
+    <string name="patch_installed_sub">InstaEclipse loads the next time Instagram starts.</string>
+    <string name="patch_open_instagram">Open Instagram</string>
+    <string name="patch_fix_links">Enable link handling</string>
+    <string name="patch_fix_links_hint">Re-signing breaks Android\'s link verification, so Instagram links open in your browser. Tap above to enable them in the app (via Shizuku if it\'s running, otherwise it opens the setting to turn on \"Open supported links\").</string>
+    <string name="patch_links_enabling">Enabling Instagram links…</string>
+    <string name="patch_links_enabled">Instagram links enabled</string>
+    <string name="shizuku_prompt_title">Enable links in one tap</string>
+    <string name="shizuku_prompt_msg">With Shizuku running, InstaEclipse can turn on all of Instagram\'s supported web addresses at once, with no manual toggling, and it sticks after every re-patch. Start Shizuku, then tap this again. Without it, you can set them manually in system settings.</string>
+    <string name="shizuku_open">Open Shizuku</string>
+    <string name="shizuku_get">Get Shizuku</string>
+    <string name="link_set_manually">Set manually</string>
+    <string name="patch_installed">Installed</string>
+    <string name="patch_state_failed">Patch failed, check the steps below.</string>
+
+    <!-- Save patched APK (no install). -->
+    <string name="patch_save">Patch &amp; save APK (no install)</string>
+    <string name="patch_save_hint">Patch and keep the APK instead of installing. One file opens a Save dialog; a split set is written into an \"InstaEclipse-patched\" folder you choose.</string>
+    <string name="patch_save_copy">Save a copy of the APK</string>
+    <string name="patch_step_ready_save">Patched. Choose where to save.</string>
+    <string name="patch_step_saving">Saving the patched APK…</string>
+    <string name="patch_saved">Saved %1$d patched APK(s).</string>
+    <string name="patch_save_cancelled">Save cancelled.</string>
+    <string name="patch_save_failed">Couldn\'t save: %1$s</string>
+    <string name="patch_nothing_to_save">Nothing to save yet, run the patch first.</string>
 </resources>

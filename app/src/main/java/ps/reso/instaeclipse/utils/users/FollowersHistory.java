@@ -15,13 +15,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Followers history: who unfollowed you and who followed you, between checks.
+ * Followers history: who unfollowed / followed you between checks.
  *
- * A check is a full load of your own Followers list (FollowListExportHook drives IG's pager). The
- * list is kept as the last snapshot (id → {username, full name}) in Instagram's private files, one
- * file per account; each check is compared with it and every difference is added to the event log.
- * A change is only seen when you check, so an event's date is when it was noticed, and the
- * previous check's date bounds when it happened.
+ * A check is a full load of your own Followers list (FollowListExportHook drives IG's pager), kept
+ * as the last snapshot (id → {username, full name}) in IG's private files, one per account; each
+ * check is diffed against it into the event log. Changes are only seen on a check, so an event's
+ * date is when it was noticed and the previous check bounds when it happened.
  */
 public final class FollowersHistory {
 

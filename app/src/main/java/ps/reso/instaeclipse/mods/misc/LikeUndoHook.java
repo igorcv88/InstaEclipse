@@ -14,6 +14,7 @@ import android.widget.Toast;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.MethodData;
 
@@ -38,10 +39,15 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
  * Like undo window (#235): a like is held for {@link #DELAY_MS} behind a small "Liked · UNDO" bar
  * and only then sent; tapping UNDO drops it.
  *
- * Every post/reel like and unlike request goes through one builder (X.0E0b.A05 on 452,
- * X.0A0e.A05 on 451) — the feed double-tap/heart, reels and the other surfaces call it. Instagram
- * flips the media's local has_liked state BEFORE calling it, so "media reads as liked" means this
- * call is a like (unlikes are sent immediately). Anchor: "source_of_like" + "fetchLikeCount".
+ * Every post/reel like and unlike request goes through one builder (X.0J8f.A04 on 455, X.0E0b.A05
+ * on 452, X.0A0e.A05 on 451) — the feed double-tap/heart, reels and the other surfaces call it.
+ * Instagram flips the media's local has_liked state BEFORE calling it, so "media reads as liked"
+ * means this call is a like (unlikes are sent immediately).
+ *
+ * Anchor: the strings "source_of_like" + "fetchLikeCount". Up to 452 both lived in the one sender
+ * method; on 455 they split across two methods of the same builder class (source_of_like in the
+ * analytics-map helper, fetchLikeCount in the sender), so we anchor the CLASS on both and then
+ * pick the void sender method inside it by its own "fetchLikeCount" + a Media parameter.
  *
  * Undo only cancels the request; the heart may stay filled until the post is refreshed.
  *
@@ -51,7 +57,9 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 public class LikeUndoHook {
 
     private static final String TAG = "(InstaEclipse | LikeUndo): ";
-    private static final String CACHE_KEY = "LikeUndoSender";
+    // Bumped (…V2) when the sender's resolution was re-anchored for IG 455: a stale method cached
+    // under the old key by an older module build on the same IG version must not be reused.
+    private static final String CACHE_KEY = "LikeUndoSenderV2";
     private static final long DELAY_MS = 4000;
     private static final ThreadLocal<Boolean> REPLAYING = new ThreadLocal<>();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -60,18 +68,30 @@ public class LikeUndoHook {
         Method target = DexKitCache.isCacheValid() ? DexKitCache.loadMethod(CACHE_KEY, Module.hostClassLoader) : null;
         if (target == null) {
             try {
-                List<MethodData> found = DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
-                        .usingStrings("source_of_like", "fetchLikeCount")
+                // Primary (IG 455+): the two anchor strings no longer share one method. On 455 the
+                // builder class LX/0J8f splits them — "source_of_like" into its analytics-map helper
+                // (returns Map), "fetchLikeCount" into the actual sender (the void builder that fills
+                // the GraphQL/REST like|unlike request and fires it). Requiring both in one method
+                // matches nothing, so anchor the CLASS on both strings (unique to it) and then pick
+                // the sender method inside it: the void method carrying the method-local
+                // "fetchLikeCount" and taking a com.instagram.feed.media.Media.
+                List<MethodData> primary = DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
+                        .declaredClass(ClassMatcher.create().usingStrings("source_of_like", "fetchLikeCount"))
+                        .usingStrings("fetchLikeCount")
                         .returnType("void")));
-                for (MethodData md : found) {
-                    Method m = md.getMethodInstance(Module.hostClassLoader);
-                    for (Class<?> p : m.getParameterTypes()) {
-                        if (p.getName().equals("com.instagram.feed.media.Media")) { target = m; break; }
-                    }
-                    if (target != null) break;
+                target = pickMediaSender(primary);
+                // Fallback (IG ≤452): both strings co-located in the single sender method. Inert on
+                // 455 (nothing matches both in one method) but keeps the old builds resolvable.
+                List<MethodData> fallback = java.util.Collections.emptyList();
+                if (target == null) {
+                    fallback = DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
+                            .usingStrings("source_of_like", "fetchLikeCount")
+                            .returnType("void")));
+                    target = pickMediaSender(fallback);
                 }
                 if (target == null) {
-                    ModuleLog.line(TAG + "❌ like sender not found (" + found.size() + " candidates)");
+                    ModuleLog.line(TAG + "❌ like sender not found (" + primary.size()
+                            + " primary, " + fallback.size() + " fallback candidates)");
                     return;
                 }
                 DexKitCache.saveMethod(CACHE_KEY, target);
@@ -111,6 +131,26 @@ public class LikeUndoHook {
         hookHeartButtons();
         hookLikeEntry(sender);
         FeatureStatusTracker.setHooked("ConfirmLikes");
+    }
+
+    /**
+     * The like sender among DexKit candidates: the method that takes a com.instagram.feed.media.Media
+     * (Instagram flips the media's local has_liked before calling it, so the arg tells like from
+     * unlike). Returns the first such method, or null if none qualifies.
+     */
+    private static Method pickMediaSender(List<MethodData> found) {
+        for (MethodData md : found) {
+            Method m;
+            try {
+                m = md.getMethodInstance(Module.hostClassLoader);
+            } catch (NoSuchMethodException e) {
+                continue;
+            }
+            for (Class<?> p : m.getParameterTypes()) {
+                if (p.getName().equals("com.instagram.feed.media.Media")) return m;
+            }
+        }
+        return null;
     }
 
     /** Post like buttons (feed, carousel slide, reels): their heart shows "selected" once liked. */

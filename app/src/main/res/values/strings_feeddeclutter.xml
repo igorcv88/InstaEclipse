@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Section header (Feed menu) -->
+    <string name="ig_dialog_feed_declutter">Declutter Posts</string>
+
+    <!-- Switch labels / concise feature labels (shared) -->
+    <string name="ig_feat_hide_feed_follow">Hide Follow button</string>
+    <string name="ig_feat_hide_feed_save">Hide Save button</string>
+    <string name="ig_feat_hide_feed_like">Hide Like button</string>
+    <string name="ig_feat_hide_feed_activity_bubbles">Hide activity bubbles</string>
+    <string name="ig_feat_hide_feed_audio_icon">Hide audio icon</string>
+    <string name="ig_feat_hide_feed_made_with_edits">Hide \"Made with Edits\"</string>
+    <string name="ig_feat_hide_feed_captions">Hide captions</string>
+</resources>

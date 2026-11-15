@@ -71,18 +71,14 @@ public class FollowConfirmHook {
         }
         if (sender == null) {
             try {
-                for (MethodData md : DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
-                        .declaredClass(ClassMatcher.create().usingStrings("follow_unknown", "last_follow_status"))
-                        .returnType("void")))) {
-                    if (!md.isMethod()) continue;
-                    Method m = md.getMethodInstance(Module.hostClassLoader);
-                    Class<?>[] p = m.getParameterTypes();
-                    if (Modifier.isStatic(m.getModifiers())) {
-                        if (sender == null && has(p, m.getDeclaringClass()) && hasUser(p) && hasEnum(p)) sender = m;
-                    } else if (statusSetter == null && p.length == 3 && p[0].isEnum()
-                            && p[1].getName().equals(USER) && p[2] == boolean.class) {
-                        statusSetter = m;
-                    }
+                // IG 455 renamed the follow manager and no longer carries "follow_unknown" in it, so
+                // the pre-455 pair ("follow_unknown","last_follow_status") no longer co-occurs. Anchor
+                // first on the manager's surviving unique log tag ("logFollowButtonTapped_invalid_userId",
+                // alongside "last_follow_status"), then fall back to the old pair for IG ≤ 452.
+                sender = findManager(bridge, "last_follow_status", "logFollowButtonTapped_invalid_userId");
+                if (sender == null) {
+                    statusSetter = null; // drop anything matched against the wrong class before retrying
+                    sender = findManager(bridge, "follow_unknown", "last_follow_status");
                 }
                 if (sender == null) {
                     ModuleLog.line(TAG + "❌ follow sender not found");
@@ -145,6 +141,35 @@ public class FollowConfirmHook {
                 + (resetMethod != null ? ", reset " + resetMethod.getName() : ", no reset")
                 + (statusGetter != null ? ", status " + statusGetter.getName() : ", no status"));
         FeatureStatusTracker.setHooked("ConfirmFollows");
+    }
+
+    /**
+     * Locate Instagram's follow manager by string anchors and return its static sender method
+     * (declaring type + {@code User} + action enum, returning void). As a side effect it fills
+     * {@link #statusSetter} with that class's (FollowStatus enum, {@code User}, boolean) setter.
+     * Returns null when no method in a class carrying all {@code anchors} matches the sender shape.
+     */
+    private static Method findManager(DexKitBridge bridge, String... anchors) {
+        Method sender = null;
+        for (MethodData md : DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
+                .declaredClass(ClassMatcher.create().usingStrings(anchors))
+                .returnType("void")))) {
+            if (!md.isMethod()) continue;
+            Method m;
+            try {
+                m = md.getMethodInstance(Module.hostClassLoader);
+            } catch (NoSuchMethodException e) {
+                continue;
+            }
+            Class<?>[] p = m.getParameterTypes();
+            if (Modifier.isStatic(m.getModifiers())) {
+                if (sender == null && has(p, m.getDeclaringClass()) && hasUser(p) && hasEnum(p)) sender = m;
+            } else if (statusSetter == null && p.length == 3 && p[0].isEnum()
+                    && p[1].getName().equals(USER) && p[2] == boolean.class) {
+                statusSetter = m;
+            }
+        }
+        return sender;
     }
 
     /**

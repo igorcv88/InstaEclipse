@@ -13,8 +13,8 @@ import java.util.Arrays;
 
 /**
  * Worker-only frame decoding from an already verified local video. No network or publication.
- * PNG preserves the decoded ARGB_8888 frame, not the video's original encoded samples. Platform
- * decoding may tone-map HDR or reduce higher bit depth; original HDR/color fidelity is not promised.
+ * PNG holds the decoded ARGB_8888 frame, not the original encoded samples. Platform decoding may
+ * tone-map HDR or drop bit depth; original HDR/color fidelity is not guaranteed.
  */
 public final class VideoFrameExtractor implements AutoCloseable {
     private static final int PREVIEW_EDGE = 960;

@@ -6,13 +6,22 @@ public class FeatureFlags {
     public static volatile boolean showHideChatButton = false;
     public static volatile boolean showDeletedMessagesButton = false;
     public static volatile boolean keepUnsentInChat = false;
+    public static volatile boolean hideUnsentLabel = false; // hide the "Unsent" mark on kept messages (#222)
     public static volatile boolean downloaderUseOriginal = true;
     public static volatile int downloaderQualityMaxShortSide = 0;
     public static volatile int feedCornerRadius = 0;       // rounded feed post corners in dp (#276), 0 = square
+    public static volatile boolean roundReelCorners = false; // round the reel video's corners too (HushGram); uses feedCornerRadius, or 24dp when that's 0
     public static volatile int storyTrayScale = 100;       // story tray size in percent (#283), 100 = Instagram's
     public static volatile String storyRingColor = "";     // unseen story ring: "#RRGGBB" or "#RRGGBB,#RRGGBB", "" = Instagram's (#283)
     public static volatile boolean downloaderCompatibility = false;
     public static volatile boolean downloaderAllowFallback = false;
+
+    // Stop Background Wake-ups (battery): each suppresses one periodic background wake-up IG
+    // schedules, all default OFF. See mods.battery.StopWakeupsHook. Fail-open: foreground messaging,
+    // user-started uploads and notifications go through other paths and are never affected.
+    public static volatile boolean stopBackgroundHeartbeat = false; // the warm_heartbeat keep-alive alarm
+    public static volatile boolean stopUploadAlarm = false;         // the analytics batch-upload alarm
+    public static volatile boolean stopBackgroundPrefetch = false;  // the IgBgFetch feed-prefetch job
 
     // Dev Options
     public static volatile boolean isDevEnabled = false;
@@ -20,6 +29,10 @@ public class FeatureFlags {
     // Ghost Mode
     public static volatile boolean isGhostModeEnabled = false;
     public static volatile boolean isGhostSeen = false;
+    // Child of isGhostSeen: when on (default), opening a chat still marks it read on THIS device
+    // (clears the "new messages" highlight) while the seen receipt stays hidden; off leaves the
+    // chat showing as unread. See GhostDMSeenHook.
+    public static volatile boolean markSeenReadLocally = true;
     public static volatile boolean isGhostTyping = false;
     public static volatile boolean isGhostScreenshot = false;
     public static volatile boolean isGhostViewOnce = false;
@@ -36,6 +49,11 @@ public class FeatureFlags {
 
     // Remove Meta AI (#179)
     public static volatile boolean removeMetaAI = false;
+
+    // Group / mute Instagram's notifications (ported from HushGram)
+    public static volatile boolean groupNotifications = false;       // bundle IG's notifications into one group with a count summary
+    public static volatile boolean groupNotificationsByType = false; // a group per channel (likes, comments, messages …) instead of one
+    public static volatile String  mutedNotificationChannels = "";   // comma-separated channel ids dropped before the shade
 
     // Lock DMs (#182) — passcode stored as salted SHA-256 hash (never plaintext)
     public static volatile boolean lockDirectMessages = false;
@@ -57,18 +75,40 @@ public class FeatureFlags {
     public static volatile boolean readReceiptChats = false; // per-chat read receipts, chosen in the chat menu
     public static volatile boolean hideDmBlend = false; // hide the Blend button in DM thread headers
     public static volatile boolean hideThreadsButton = false; // hide the Threads button on profiles
+    // Profile Declutter: hide clutter from profile headers (ProfileDeclutterHook)
+    public static volatile boolean hideProfileHighlights = false; // hide the story-highlights tray on profiles
+    public static volatile boolean hideProfileSong = false;       // hide the profile song/music block
+    public static volatile boolean hideProfileBioLinks = false;   // hide the bio links row
+    public static volatile boolean hideProfileInterests = false;  // hide interests / category chips
+    public static volatile boolean hideProfileBanners = false;    // hide cross-app banner row (Threads/FB/WhatsApp)
+    // Feed Declutter: per-element toggles that hide chrome on home-feed posts (FeedDeclutterHook)
+    public static volatile boolean hideFeedFollowButton = false;  // hide Follow/Subscribe on feed posts
+    public static volatile boolean hideFeedSaveButton = false;    // hide the Save button on feed posts
+    public static volatile boolean hideFeedLikeButton = false;    // hide the Like button + like count
+    public static volatile boolean hideFeedActivityBubbles = false; // hide friend-activity facepile bubbles
+    public static volatile boolean hideFeedAudioIcon = false;     // hide the audio icon on feed posts
+    public static volatile boolean hideFeedMadeWithEdits = false; // hide the "Made with Edits" label
+    public static volatile boolean hideFeedCaptions = false;      // hide post captions in the feed
     public static volatile boolean hideNotesTray = false; // hide the Notes tray in the DM inbox (#241)
     public static volatile boolean hideInstants = false; // the floating Instants stack
     public static volatile boolean hideDmSuggestions = false; // no "Suggested for you" accounts under the DM inbox (#282)
     public static volatile boolean chatExport = false; // header button: export the open chat to HTML (#225)
+    public static volatile boolean voiceMessagesList = false; // "Voice messages" on the chat details page (#307)
     public static volatile boolean jumpToFirstMessage = false; // header button: scroll a DM to its first message (#244)
     public static volatile boolean translateMessages = false; // "Translate" in the DM message long-press menu
     public static volatile boolean bulkUnsend = false; // "Unsend multiple" in the DM message long-press menu (#245)
     public static volatile boolean keepEditHistory = false; // show previous text of edited DMs (#243)
     public static volatile boolean offerMediaInfo = false; // "Media info" row in the post menu (#231)
     public static volatile boolean offerPlaybackSpeed = false; // "Playback speed" row for feed videos (#247)
+    public static volatile boolean keepVideoPlayingBackground = false; // keep feed/story/reel video audio playing when you leave the app
+    public static volatile boolean videoPictureInPicture = false; // force Instagram's native reel picture-in-picture window on exit
     public static volatile boolean forceReelScrubber = false; // always show IG's reel seek bar (#247)
     public static volatile boolean holdLeftSlowMotion = false; // hold the left half of a reel: 0.5x instead of IG's 2x
+    public static volatile boolean feedVideoTapPause = false; // tap a home-feed video to pause/play it
+    public static volatile boolean feedVideoSeekBar = false; // scrubber overlay on home-feed videos
+    public static volatile boolean feedVideoHold2x = false; // hold a home-feed video for 2x playback
+    public static volatile boolean feedVideoDoubleTapSkip = false; // double-tap a feed video's edge to seek
+    public static volatile int feedVideoSkipSeconds = 10; // how far feedVideoDoubleTapSkip seeks, seconds
     public static volatile boolean offerCopyImage = false; // offer "Copy image to clipboard" when downloading a photo (#228)
     public static volatile boolean enableVoiceDownload = false; // Download row for DM voice messages (#223)
     public static volatile boolean enableStickerDownload = false; // Download row for DM stickers and GIFs
@@ -77,6 +117,8 @@ public class FeatureFlags {
     public static volatile boolean maxUploadQuality = false; // force IG's "Upload at highest quality" switch always on
     public static volatile boolean expandCaptions = false; // feed captions without "… more" (#246)
     public static volatile boolean hidePlusUpsells = false; // hide Instagram Plus upsell buttons / badges
+    public static volatile boolean freeAppIcons = false; // long-press the logo: our free picker of Instagram's app icons
+    public static volatile boolean glassTabBar = false; // floating, see-through, blurred bottom tab bar (#281)
     public static volatile boolean hideCommunityNotes = false; // hide community notes on posts/reels (#259)
     // Extras (see ExtrasFeatures)
     public static volatile boolean hideStoriesTray = false; // hide the story tray only; stories still open from profiles
@@ -87,6 +129,12 @@ public class FeatureFlags {
     public static volatile boolean unlimitedAccounts = false; // lift the 5-account limit
     public static volatile boolean reelsLockScroll = false; // lock swiping between reels
     public static volatile boolean reelsAutoScroll = false; // unlock Instagram's own Reels auto-scroll option
+    public static volatile boolean safePacing = false; // slower, human-like bulk actions and a consistent spoofed fingerprint, to lower ban risk
+    public static volatile boolean reelsBlurBars = false; // blurred cover behind letterboxed reels (#273)
+    public static volatile boolean reelsHideFollow = false; // Clean up Reels: no Follow button (#279)
+    public static volatile boolean reelsHideMetaAi = false; // Clean up Reels: no Meta AI prompts (#279)
+    public static volatile boolean reelsHidePills = false; // Clean up Reels: no template / audio pills (#279)
+    public static volatile boolean reelsHideCommentBar = false; // Clean up Reels: no comment bar (#279)
     public static volatile boolean disableSwipeToCamera = false; // sideways swipe on the feed no longer opens the camera
     public static volatile boolean followingOnlyFeed = false; // home feed shows only accounts you follow
     public static volatile boolean confirmFeedRefresh = false; // ask before pull-to-refresh reloads the home feed (#278)
@@ -128,6 +176,9 @@ public class FeatureFlags {
     public static volatile boolean spoofLastSeen = false;
     public static volatile boolean disableSearchHistory = false; // keep searches out of Recent (#280)
     public static volatile boolean confirmCalls = false;       // ask before a chat call starts (#277)
+    public static volatile int     callBlockMode = 0;          // incoming call blocker: 0=everyone(off)/1=nobody/2=only list/3=except list
+    public static volatile String  callBlockAccounts = "";     // caller names / user ids, newline- or comma-separated
+    public static volatile String  callBlockChats = "";        // per-chat block list (chat names) from the thread menu; always blocks
     public static volatile boolean showFollowerToast = false;
     public static volatile boolean showFeatureToasts = false;
     public static volatile boolean disableRepost = false;
@@ -154,6 +205,8 @@ public class FeatureFlags {
     public static volatile boolean spoofVerified = false;  // show the verified badge on your own profile
     public static volatile String  spoofName = "";         // own profile header name, "" = unchanged
     public static volatile String  spoofUsername = "";     // own profile action bar username, "" = unchanged
+    public static volatile boolean spoofPrivate = false;   // the copied account is private
+    public static volatile String  spoofTargetId = "";    // user id of the profile copied into the spoofer, "" = none
     public static volatile String  spoofBio = "";          // own profile bio, "" = unchanged
     public static volatile String  spoofAvatar = "";       // own profile picture: Base64 JPEG (max 320x320), "" = unchanged
     public static volatile boolean profileAnalyzer = false; // watchlist: compare a profile's Followers / Following between analyses
@@ -189,9 +242,31 @@ public class FeatureFlags {
     public static volatile int themeLightPresetId = -1; // #251: theme in dark mode only by default (light stays stock)
     public static volatile String themePaletteJson = "";
 
+    // Advanced Theme Extras — layer on top of the custom-theme engine; all default off.
+    public static volatile boolean themeDynamicAccent = false; // Material You: accent follows the Android system/wallpaper colors (API 31+)
+    public static volatile boolean themeOledSurfaces = false;   // force the theme's backgrounds / sheets / menus to true black (OLED)
+    public static volatile boolean themeAccentOnly = false;     // recolor ONLY Instagram's blue accent (badges/icons/rings/links), no full theme
+    public static volatile int themeAccentColor = 0xFF3897F0;   // the accent used by themeAccentOnly (default = Instagram blue)
+
     // Clean Feed
     public static volatile boolean hideSuggestionsInFeed = false;
     public static volatile boolean hideThreadsSuggestions = false;
+    public static volatile boolean hideSuggestionsInReels = false; // drop suggested-account (netego) units from the Reels tab (#298)
+    public static volatile boolean hidePaidPartnerships = false; // drop paid partnership / sponsored posts and reels at parse time (#275)
+
+    // Explore cleanup — hide the Explore grid, request the non-personalized grid, hide search suggestions
+    public static volatile boolean hideExploreGrid = false;          // drop the topical Explore grid fetch (Search tab)
+    public static volatile boolean exploreNoPersonalization = false; // force IG's non-personalized Explore grid (EU/DSA param)
+    public static volatile boolean hideSearchSuggestions = false;    // drop the search null-state suggested accounts/searches
+    // Reel content filters: drop reels from the Reels tab at parse time (fail-open)
+    public static volatile boolean hideAiReels = false;          // hide reels IG labeled as AI content
+    public static volatile boolean hideReelsByCaption = false;   // hide reels whose caption holds a blocked word
+    public static volatile String  reelsBlockedWords = "";       // caption words / phrases, comma- or newline-separated
+    public static volatile boolean hideReelsByLanguage = false;  // hide reels whose caption is in a listed language
+    public static volatile String  reelsBlockedLanguages = "";   // language codes / names to hide, comma- or newline-separated
+    public static volatile boolean hideLowViewReels = false;     // hide reels under the view / like thresholds
+    public static volatile int     reelMinViews = 0;             // minimum play/view count; 0 = ignore views
+    public static volatile int     reelMinLikes = 0;             // minimum like count; 0 = ignore likes
 
     // Downloader
     public static volatile boolean enablePostDownload = false;
@@ -201,6 +276,9 @@ public class FeatureFlags {
     public static volatile boolean downloaderUsernameFolder = false;
     public static volatile boolean downloaderAddTimestamp = false;
     public static volatile boolean copyMediaLink = false;      // #117 — inject "Copy Media Link" (direct CDN url) into the post ⋮ menu
+    public static volatile boolean keepInstantHistory = false;
+    public static volatile String  pinnedStoryUsers = "";
+    public static volatile int     pinnedStoryLimit = 30;
     public static volatile boolean saveInstants = false;        // #184 — long-press a received Instant (quicksnap) to save it
     public static volatile boolean uploadInstants = false;      // #199 — send an Instant from gallery (bitmap-swap into quicksnap send)
     public static volatile boolean cacheStories = false;        // cache viewed stories locally for 24h (survive expiry/deletion)

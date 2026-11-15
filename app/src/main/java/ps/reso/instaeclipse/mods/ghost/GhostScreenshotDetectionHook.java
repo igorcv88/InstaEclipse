@@ -42,7 +42,7 @@ public class GhostScreenshotDetectionHook {
         }
 
         try {
-            // Step 1: Find class referencing "ScreenshotNotificationManager"
+            // class referencing "ScreenshotNotificationManager"
             List<ClassData> classes = DexKitQueryCache.findClass(bridge, FindClass.create()
                     .matcher(ClassMatcher.create().usingStrings("ScreenshotNotificationManager")));
 
@@ -54,7 +54,7 @@ public class GhostScreenshotDetectionHook {
             for (ClassData classData : classes) {
                 String className = classData.getName();
 
-                // Step 2: Find all methods in that class
+                // methods of that class
                 List<MethodData> methods = DexKitQueryCache.findMethod(bridge, FindMethod.create()
                         .matcher(MethodMatcher.create().declaredClass(className)));
 
@@ -62,7 +62,7 @@ public class GhostScreenshotDetectionHook {
                     ClassDataList paramTypes = method.getParamTypes();
                     String returnType = String.valueOf(method.getReturnType());
 
-                    // Match: void method(long)
+                    // void method(long)
                     if (returnType.contains("void") &&
                             paramTypes.size() == 1 &&
                             String.valueOf(paramTypes.get(0)).contains("long")) {

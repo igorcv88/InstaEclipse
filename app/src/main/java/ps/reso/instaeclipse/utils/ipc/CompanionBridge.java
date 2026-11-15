@@ -39,6 +39,10 @@ public final class CompanionBridge {
     // Official Instagram signing identity; never enroll a host by package name alone.
     // hasSigningCertificate also validates its signing-history descendants (APK v3 rotation).
     private static final String HOST_SIGNER_SHA256 = "5f3e50f435583c9ae626302a71f7340044087a7e2c60adacfc254205a993e305";
+    // SHA-256 of OUR no-root patcher's bundled signing key. A build we patched is re-signed with
+    // this key, so trusting it directly is rotation-proof (it never depends on Instagram's own
+    // certificate, which changes on key rotation) and spares the user a manual "trust" step.
+    private static final String PATCHER_SIGNER_SHA256 = "c081890cf2a1adf13e56d7b50a4f3d8edb35b7c46d6ccc732dd997b7e433be1d";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ThreadPoolExecutor IPC = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(16), new ThreadPoolExecutor.AbortPolicy());
@@ -57,8 +61,71 @@ public final class CompanionBridge {
                 expected[i] = (byte) Integer.parseInt(HOST_SIGNER_SHA256.substring(i * 2, i * 2 + 2), 16);
             if (context.getPackageManager().hasSigningCertificate(packageName, expected, PackageManager.CERT_INPUT_SHA256))
                 return true;
-            return lspatchOriginalSigner(context, packageName, expected);
+            // Trust a build re-signed with our own patcher key (what the no-root patcher produces),
+            // regardless of which original cert its sigbypass reports — so a patched Instagram works
+            // without the user approving it, and it keeps working across Instagram key rotations.
+            byte[] patcher = hex(PATCHER_SIGNER_SHA256);
+            if (patcher != null && context.getPackageManager()
+                    .hasSigningCertificate(packageName, patcher, PackageManager.CERT_INPUT_SHA256))
+                return true;
+            if (lspatchOriginalSigner(context, packageName, expected)) return true;
+            return userTrusted(context, packageName);
         } catch (RuntimeException ignored) { return false; }
+    }
+
+    // ---- Trusted by the user (#299) ----
+    // An Instagram not signed by Instagram (a modified or re-signed build) is refused above. The
+    // user can trust the exact signing key of the copy installed now, from the companion app's
+    // home screen. Only that key is accepted: a differently signed Instagram is refused again.
+    private static final String TRUST_PREFS = "ie_trusted_hosts";
+    private static final String TRUST_KEY = "signers";
+
+    /** True when the package's signer is one the user chose to trust in the companion app. */
+    public static boolean userTrusted(Context context, String packageName) {
+        if (context == null || !BrokerPayload.HOST.equals(packageName)) return false;
+        try {
+            java.util.Set<String> trusted = context.getSharedPreferences(TRUST_PREFS, Context.MODE_PRIVATE)
+                    .getStringSet(TRUST_KEY, java.util.Collections.emptySet());
+            PackageManager pm = context.getPackageManager();
+            for (String hex : trusted) {
+                byte[] sha = hex(hex);
+                if (sha != null && pm.hasSigningCertificate(packageName, sha, PackageManager.CERT_INPUT_SHA256)) return true;
+            }
+        } catch (RuntimeException ignored) { }
+        return false;
+    }
+
+    /** SHA-256 (hex) of the key the installed package is signed with now; null if unknown or several. */
+    public static String currentSigner(Context context, String packageName) {
+        try {
+            android.content.pm.PackageInfo info = context.getPackageManager()
+                    .getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES);
+            android.content.pm.SigningInfo signing = info.signingInfo;
+            if (signing == null) return null;
+            android.content.pm.Signature[] signers = signing.getApkContentsSigners();
+            if (signers == null || signers.length != 1) return null;
+            byte[] sha = java.security.MessageDigest.getInstance("SHA-256").digest(signers[0].toByteArray());
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : sha) sb.append(String.format(java.util.Locale.ROOT, "%02x", b));
+            return sb.toString();
+        } catch (Exception ignored) { return null; }
+    }
+
+    /** Trust (or stop trusting) the key the installed Instagram is signed with now. */
+    public static boolean setUserTrusted(Context context, boolean trust) {
+        String signer = currentSigner(context, BrokerPayload.HOST);
+        if (signer == null) return false;
+        android.content.SharedPreferences prefs = context.getSharedPreferences(TRUST_PREFS, Context.MODE_PRIVATE);
+        java.util.Set<String> next = new java.util.HashSet<>(prefs.getStringSet(TRUST_KEY, java.util.Collections.emptySet()));
+        if (trust) next.add(signer); else next.remove(signer);
+        return prefs.edit().putStringSet(TRUST_KEY, next).commit();
+    }
+
+    private static byte[] hex(String s) {
+        if (s == null || s.length() != 64 || !s.matches("[0-9a-f]+")) return null;
+        byte[] out = new byte[32];
+        for (int i = 0; i < 32; i++) out[i] = (byte) Integer.parseInt(s.substring(i * 2, i * 2 + 2), 16);
+        return out;
     }
 
     /** Patched Instagram (sourceDir + install time) -> whether its recorded signer matched. */
@@ -79,8 +146,7 @@ public final class CompanionBridge {
             try (java.util.zip.ZipFile apk = new java.util.zip.ZipFile(info.applicationInfo.sourceDir)) {
                 java.util.zip.ZipEntry entry = apk.getEntry("assets/lspatch/config.json");
                 if (entry != null && entry.getSize() > 0 && entry.getSize() < 64 * 1024) {
-                    // InputStream.readAllBytes() is not available before Android 13.
-                    // Enforce a hard bound even when ZIP metadata reports a small size.
+                    // Support Android 9+ and enforce a bound even when ZIP size is inaccurate.
                     java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream((int) entry.getSize());
                     try (java.io.InputStream in = apk.getInputStream(entry)) {
                         byte[] chunk = new byte[4096];
@@ -275,7 +341,8 @@ public final class CompanionBridge {
                 finish(token, null);
             } catch (SecurityException denied) {
                 if (token != null) token.cancel();
-                finish(null, "Companion request denied");
+                // #299: a modified Instagram is refused until the user trusts it in the app.
+                finish(null, "Companion request denied. Open the InstaEclipse app to trust this Instagram");
             } catch (Exception failure) {
                 if (token != null) token.cancel();
                 finish(null, "Companion request failed");

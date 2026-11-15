@@ -284,7 +284,7 @@ final class SelectedMediaAdapter implements SelectedMediaSnapshot.Access {
     }
 
     private void resolve(DexKitBridge bridge, ClassLoader loader, String type, String key) {
-        // Schema-key tables also match <clinit>()V. Filter its DEX metadata BEFORE trying
+        // Schema-key tables also match <clinit>()V. Filter its DEX metadata before trying
         // Java reflection: DexKit cannot turn a class initializer into a java.lang.Method.
         Resolution result = new Resolution();
         collectCandidates(bridge, loader, type, key, false, result);

@@ -417,13 +417,13 @@ public class StoryDownloadHook {
 
     /**
      * Hooks the story viewer's per-page bind (ReelViewerFragment.onCurrentActiveItemBound — anchored
-     * by that stable string; the method name is obfuscated) which fires for EVERY story shown. Its
-     * first ReelItem param is the current story; we record it to the 24h cache.
+     * by that stable string; the method name is obfuscated), which fires for every story shown. Its
+     * first ReelItem param is the current story, recorded to the 24h cache.
      */
     private void installStoryCaptureHook(DexKitBridge bridge, ClassLoader cl) {
         XC_MethodHook capture = new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam p) { ps.reso.instaeclipse.utils.core.JitGuard.tick(p.method);
-                if (!FeatureFlags.cacheStories) return;
+                if (!FeatureFlags.cacheStories && FeatureFlags.pinnedStoryUsers.isEmpty()) return;
                 Object reelItem = null;
                 for (Object a : p.args) {
                     if (a != null && a.getClass().getName().equals("com.instagram.model.reels.ReelItem")) { reelItem = a; break; }
@@ -468,6 +468,7 @@ public class StoryDownloadHook {
                     if (v instanceof Long l && l > 0) expiring = l < 100000000000L ? l * 1000L : l; // sec→ms
                 } catch (Throwable ignored) {}
             }
+            if (!FeatureFlags.cacheStories && !ps.reso.instaeclipse.utils.media.StoryCache.isPinned(author)) return;
             final String fid = id, fauthor = author; final long fexp = expiring;
             FeedVideoDownloadHook.executor.submit(() ->
                     ps.reso.instaeclipse.utils.media.StoryCache.capture(fid, fauthor, url, video, fexp));
@@ -689,7 +690,7 @@ public class StoryDownloadHook {
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
                 if (!FeatureFlags.enableStoryDownload && !FeatureFlags.isGhostStory && !FeatureFlags.offerPlaybackSpeed) return;
 
-                // 1. Find which button was tapped
+                // which button was tapped
                 CharSequence tapped = null;
                 for (Object arg : param.args) {
                     if (arg instanceof CharSequence cs) { tapped = cs; break; }
@@ -712,9 +713,9 @@ public class StoryDownloadHook {
                     Object holder = findReelItemHolder(param);
                     Context ctx = findContextAcrossParam(param, holder != null ? holder : param.thisObject);
                     if (ctx == null) ctx = ps.reso.instaeclipse.mods.ui.UIHookManager.getCurrentActivity();
-                    // IG paused the story when its menu opened and resumes it only for options it
-                    // handles itself; we swallowed this tap, so replay the dispatcher with IG's own
-                    // "[INTERNAL] Resume Playback" once our chooser closes.
+                    // IG paused the story when its menu opened and resumes only for options it
+                    // handles itself; this tap was swallowed, so replay the dispatcher with IG's own
+                    // "[INTERNAL] Resume Playback" once the chooser closes.
                     final java.lang.reflect.Member method = param.method;
                     final Object self = param.thisObject;
                     final Object[] args = param.args.clone();
@@ -749,16 +750,16 @@ public class StoryDownloadHook {
                 String dlLabel = I18n.t(AndroidAppHelper.currentApplication(), R.string.ig_dl_title);
                 if (!dlLabel.contentEquals(tapped)) return;
 
-                // 2. Consume the event — Instagram won't process an option it didn't add
+                // consume the event — Instagram won't process an option it didn't add
                 param.setResult(null);
 
-                // 3. Locate the ReelItem holder — 'this' or any same-class param (self-story
-                //    passes the outer class as an argument).
+                // ReelItem holder — 'this' or any same-class param (self-story passes the outer
+                // class as an argument).
                 Object holder = findReelItemHolder(param);
                 Object effectiveHolder = holder != null ? holder : param.thisObject;
 
-                // 4. Context — the self-story dispatcher passes the ReelItem and the Context on
-                //    SEPARATE args, so search 'this' AND every argument, not just the holder.
+                // Context — the self-story dispatcher passes the ReelItem and the Context on
+                // separate args, so search 'this' and every argument, not just the holder.
                 Context ctx = findContextAcrossParam(param, effectiveHolder);
                 if (ctx == null) {
                     ModuleLog.line("(IE|Story) ❌ Context not found");
@@ -866,16 +867,11 @@ public class StoryDownloadHook {
     }
 
     /**
-     * Extracts every downloadable representation from the holder object.
-     *   1. Reads the ReelItem field from the holder.
-     *   2. Searches for VideoVersionIntf → video URL (videos).
-     *   3. Searches for image Candidate objects (CDN URL + width int + height int) and
-     *      picks the one with the largest pixel area (photos).
-     *   4. Falls back to raw CDN string scan with area-based ranking.
-     *
-     * A photo story with music commonly exposes both image_versions2 (the original
-     * still) and video_versions (the rendered story with audio). Do not return after
-     * finding the MP4: keeping both URLs is what lets the user choose the JPG instead.
+     * Every downloadable representation of the holder: the ReelItem's VideoVersionIntf (video),
+     * image Candidate objects (CDN URL + width + height, largest pixel area), then a raw CDN scan
+     * ranked by area. A photo story with music exposes both image_versions2 (the still) and
+     * video_versions (the rendered story with audio); both URLs are kept so the JPG can be chosen
+     * instead of the MP4.
      */
     private static StoryMediaOptions extractStoryMediaOptions(Context ctx, Object holder) {
         return extractStoryMediaOptions(ctx, holder, false);
@@ -919,11 +915,10 @@ public class StoryDownloadHook {
                 imageUrl = null;
             }
 
-            // Walk the graph looking for image Candidate objects when the canonical
-            // Media helper is unavailable.
-            // A Candidate has a CDN URL string field + at least two int fields with
-            // plausible pixel dimensions. Field names are obfuscated so we match by type
-            // and value range. Pick the candidate with the largest width×height area.
+            // Walk the graph for image Candidate objects when the canonical Media helper is
+            // unavailable. A Candidate has a CDN URL string field + at least two int fields with
+            // plausible pixel dimensions; field names are obfuscated, so matched by type and value
+            // range. Pick the candidate with the largest width×height area.
             if (imageUrl == null) {
                 List<CandidateInfo> candidates = new ArrayList<>();
                 collectImageCandidates(target, candidates,
@@ -1100,15 +1095,11 @@ public class StoryDownloadHook {
     }
 
     /**
-     * Walks the object graph looking for Instagram image Candidate objects.
-     * A Candidate is identified by having:
-     *   • At least one String field/method that is a CDN image URL (not video)
-     *   • At least two int/long fields/methods whose values are plausible pixel dimensions (50–20 000 px)
-     *
-     * Field names are ignored — they are obfuscated in Instagram builds.
-     * No-arg methods are also probed to handle Pando/LiveTree JNI-backed nodes where
-     * data is not exposed as Java fields (fixes lower-quality photos on some story types).
-     * The two largest plausible-dimension ints are multiplied to estimate the area.
+     * Walks the object graph for Instagram image Candidate objects: a CDN image URL (not video)
+     * field/method plus at least two int/long dimensions in 50–20 000 px. Field names are ignored
+     * (obfuscated). No-arg methods are probed too for Pando/LiveTree JNI-backed nodes whose data
+     * isn't exposed as Java fields (fixes lower-quality photos on some story types). Area = the two
+     * largest plausible dimensions multiplied.
      */
     /** {url, area} of the largest image candidate reachable from {@code media}, or null. */
     static Object[] largestImage(Object media) {
@@ -1285,8 +1276,8 @@ public class StoryDownloadHook {
     // ── Username extraction ───────────────────────────────────────────────────
 
     /**
-     * Tries to extract the story author's username from the holder or ReelItem object.
-     * ReelItem is non-obfuscated so getUser() and getUsername() are stable method names.
+     * Story author's username from the holder or ReelItem. ReelItem is non-obfuscated, so
+     * getUser() and getUsername() are stable method names.
      */
     private static String extractUsernameFromReelItemHolder(Object holder) {
         if (holder == null) {
@@ -1295,7 +1286,7 @@ public class StoryDownloadHook {
         }
         ModuleLog.line("(IE|Story|Username) searching in holder=" + holder.getClass().getName());
         try {
-            // Step 1: find the ReelItem field on the holder
+            // find the ReelItem field on the holder
             Object reelItem = null;
             Class<?> cls = holder.getClass();
             while (cls != null && cls != Object.class) {
@@ -1325,9 +1316,9 @@ public class StoryDownloadHook {
                 return null;
             }
 
-            // Step 2: probe all no-arg non-primitive methods on ReelItem.
-            // Priority: find a method returning com.instagram.user.model.User.
-            // Fallback: if a method returns com.instagram.feed.media.Media → delegate to feed extractor.
+            // probe all no-arg non-primitive methods on ReelItem.
+            // Priority: a method returning com.instagram.user.model.User.
+            // Fallback: a method returning com.instagram.feed.media.Media → delegate to feed extractor.
             for (Method m : ps.reso.instaeclipse.utils.core.SafeReflect.methods(reelItem.getClass())) {
                 if (m.getParameterCount() != 0) continue;
                 Class<?> ret = m.getReturnType();
@@ -1410,7 +1401,7 @@ public class StoryDownloadHook {
         List<CharSequence> labels = new ArrayList<>();
         List<StoryMedia> choices = new ArrayList<>();
 
-        // Photo first: this is the requested path for photo stories carrying music.
+        // Photo first: the requested path for photo stories carrying music.
         if (media.imageUrl != null) {
             labels.add(I18n.t(ctx, R.string.ig_story_download_photo));
             choices.add(new StoryMedia(media.imageUrl, false));

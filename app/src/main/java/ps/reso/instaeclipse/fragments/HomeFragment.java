@@ -44,7 +44,6 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import ps.reso.instaeclipse.R;
 import ps.reso.instaeclipse.utils.core.CommonUtils;
@@ -73,12 +72,14 @@ public class HomeFragment extends Fragment {
             // Ghost mode
             "isGhostSeen", "isGhostTyping", "isGhostStory", "isGhostLive", "allowScreenshots",
             "isGhostScreenshot", "isGhostViewOnce", "permanentViewMode", "keepEphemeralMessages",
-            "keepUnsentMessages", "keepEditHistory", "jumpToFirstMessage", "translateMessages", "bulkUnsend", "chatExport",
+            "keepUnsentMessages", "keepEditHistory", "jumpToFirstMessage", "translateMessages", "bulkUnsend", "chatExport", "voiceMessagesList",
             // Ads & analytics
             "isAdBlockEnabled", "isAnalyticsBlocked", "disableTrackingLinks", "openLinksExternally",
             // Clean feed
-            "hideSuggestionsInFeed", "hideThreadsSuggestions", "hideLikedPosts", "confirmFeedRefresh", "hideCommunityNotes", "followingOnlyFeed",
-            "hidePlusUpsells", "expandCaptions",
+            "hideSuggestionsInFeed", "hideThreadsSuggestions", "hideSuggestionsInReels", "hidePaidPartnerships", "hideLikedPosts", "confirmFeedRefresh", "hideCommunityNotes", "followingOnlyFeed",
+            "hideExploreGrid", "exploreNoPersonalization", "hideSearchSuggestions",
+            "hideReelsByCaption", "hideReelsByLanguage", "hideLowViewReels",
+            "hidePlusUpsells", "freeAppIcons", "glassTabBar", "expandCaptions",
             // Distraction-free
             "disableStories", "disableFeed", "disableReels", "disableReelsExceptDM", "disableExplore",
             "disableComments", "hideNotesTray", "hideDmSuggestions", "hideInstants", "hideDmBlend", "hideThreadsButton", "readReceiptChats",
@@ -86,20 +87,27 @@ public class HomeFragment extends Fragment {
             "hideTabHome", "hideTabReels", "hideTabCreate", "hideTabMessages", "hideTabActivity", "hideTabProfile", "backLeavesHome",
             // Misc
             "disableStoryFlipping", "disableVideoAutoPlay", "spoofLastSeen", "disableSearchHistory", "confirmCalls", "disableRepost", "showFollowerToast",
-            "showFeatureToasts", "enableStoryMentions", "disableDiscoverPeople", "enableCopyComment",
+            "showFeatureToasts", "groupNotifications", "groupNotificationsByType", "enableStoryMentions", "disableDiscoverPeople", "enableCopyComment",
             "disableDoubleTapLike", "enableCaptionCopy", "enablePhotoZoom", "removeMetaAI",
             "hideShareCreateGroup", "exactTimestamps", "likeUndo", "confirmLikes", "confirmFollows", "profileMenuTools", "postCountSpoof", "profileSpoofer", "profileAnalyzer", "profileFollowsYouLabel", "fancyBioFont", "savedOnProfile",
             "storyViewerSearch", "storyLinks", "storyInfo", "commentSearch", "followListExport", "followersHistory",
+            "hideProfileHighlights", "hideProfileBanners",
+            "hideFeedFollowButton",
             // Lock / hide chats
             "lockDirectMessages", "lockWholeApp", "lockSavedCollections", "lockUseFingerprint",
             "hideSpecificChats",
             // Location / theme
             "spoofLocation", "customThemeEnabled", "customFontEnabled", "customEmojiEnabled",
+            "themeDynamicAccent", "themeOledSurfaces", "themeAccentOnly",
             // Downloader
             "enablePostDownload", "enableStoryDownload", "enableReelDownload", "enableProfileDownload",
             "downloaderUsernameFolder", "downloaderAddTimestamp", "copyMediaLink", "offerAudioDownload",
             "enableVoiceDownload", "enableStickerDownload", "enableDmMediaDownload", "offerCopyImage", "offerMediaInfo", "offerPlaybackSpeed",
-            "forceReelScrubber", "holdLeftSlowMotion", "maxUploadQuality", "saveInstants", "uploadInstants", "cacheStories",
+            "keepVideoPlayingBackground", "videoPictureInPicture",
+            "forceReelScrubber", "holdLeftSlowMotion", "feedVideoSeekBar", "feedVideoHold2x", "feedVideoDoubleTapSkip",
+            "maxUploadQuality", "saveInstants", "keepInstantHistory", "uploadInstants", "cacheStories",
+            // Battery (stop background wake-ups)
+            "stopBackgroundHeartbeat", "stopUploadAlarm", "stopBackgroundPrefetch",
             // Developer
             "isDevEnabled", "removeBuildExpiredPopup"
     };
@@ -200,7 +208,7 @@ public class HomeFragment extends Fragment {
 
         launchInstagramButton = view.findViewById(R.id.launch_instagram_button);
         restartInstagramButton = view.findViewById(R.id.restart_instagram_button);
-        MaterialButton downloadButton = view.findViewById(R.id.download_instagram_button);
+        MaterialButton patchButton = view.findViewById(R.id.patch_instagram_button);
 
         instagramStatusCard = view.findViewById(R.id.instagram_status_card);
         instagramStatusText = view.findViewById(R.id.instagram_status_text);
@@ -232,15 +240,32 @@ public class HomeFragment extends Fragment {
         checkInstagramStatus();
 
         restartInstagramButton.setOnClickListener(v -> restartInstagram());
-        downloadButton.setOnClickListener(v -> {
-            String url = ps.reso.instaeclipse.utils.core.ExportBrand.TESTED_INSTAGRAM_APK;
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-        });
+        patchButton.setOnClickListener(v ->
+                startActivity(new Intent(requireContext(), ps.reso.instaeclipse.patcher.PatchInstagramActivity.class)));
         view.findViewById(R.id.home_shortcuts_edit).setOnClickListener(v -> showEditShortcutsDialog());
 
         setupContributorsAndSpecialThanks(view);
 
+        maybeHandleRestartRequest();
+
         return view;
+    }
+
+    /**
+     * Instagram's in-app restart hands the relaunch to us (see CommonUtils.restartViaCompanion),
+     * because a dying Instagram process can't bring itself back to the foreground on Android 12+.
+     * This fragment is the foreground UI, so our normal {@link #restartInstagram()} (broadcast
+     * ACTION_RESTART, then relaunch) brings Instagram back cleanly. The small delay lets this
+     * activity finish resuming first.
+     */
+    private void maybeHandleRestartRequest() {
+        try {
+            Intent intent = requireActivity().getIntent();
+            if (intent == null || !intent.hasExtra(CommonUtils.EXTRA_RESTART_IG)) return;
+            intent.removeExtra(CommonUtils.EXTRA_RESTART_IG);
+            mainHandler.postDelayed(this::restartInstagram, 500);
+        } catch (Throwable ignored) {
+        }
     }
 
     @Override
@@ -337,6 +362,7 @@ public class HomeFragment extends Fragment {
         }
 
         instagramVariantText.setText(CommonUtils.getVariantLabel(pkg));
+        showSignerTrust(pkg);
 
         instagramInfoIcon.setOnClickListener(v -> {
             Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
@@ -346,6 +372,50 @@ public class HomeFragment extends Fragment {
         });
 
         launchInstagramButton.setOnClickListener(v -> launchPackage(pkg));
+    }
+
+    private android.content.res.ColorStateList variantDefaultColors;
+
+    /**
+     * #299: an Instagram that isn't signed by Instagram (modified or re-signed) is refused for
+     * downloads and settings sync. Its status line says so and offers to trust that exact key;
+     * the first time such a key is seen the question is asked right away.
+     */
+    private void showSignerTrust(String pkg) {
+        if (variantDefaultColors == null) variantDefaultColors = instagramVariantText.getTextColors();
+        instagramVariantText.setTextColor(variantDefaultColors);
+        instagramVariantText.setOnClickListener(null);
+        instagramVariantText.setClickable(false);
+        if (!CommonUtils.IG_PACKAGE_NAME.equals(pkg)) return;
+        Context ctx = requireContext();
+        String signer = ps.reso.instaeclipse.utils.ipc.CompanionBridge.currentSigner(ctx, pkg);
+        if (signer == null) return;
+        boolean byUser = ps.reso.instaeclipse.utils.ipc.CompanionBridge.userTrusted(ctx, pkg);
+        if (!byUser && ps.reso.instaeclipse.utils.ipc.CompanionBridge.isTrustedHost(ctx, pkg)) return; // official
+        // Not the variant label: "Official" would contradict "Not signed by Instagram".
+        String label = getString(byUser ? R.string.home_signer_trusted : R.string.home_signer_untrusted);
+        instagramVariantText.setText(label);
+        if (!byUser) instagramVariantText.setTextColor(COLOR_ERROR);
+        instagramVariantText.setOnClickListener(v -> askSignerTrust(pkg, signer, byUser));
+        SharedPreferences seen = ctx.getSharedPreferences("ie_trusted_hosts", Context.MODE_PRIVATE);
+        if (!byUser && !seen.getBoolean("asked_" + signer, false)) {
+            seen.edit().putBoolean("asked_" + signer, true).apply();
+            askSignerTrust(pkg, signer, false);
+        }
+    }
+
+    private void askSignerTrust(String pkg, String signer, boolean trusted) {
+        if (!isAdded()) return;
+        String key = signer.substring(0, 16).replaceAll("(.{4})(?!$)", "$1 ");
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(trusted ? R.string.home_signer_untrust_title : R.string.home_signer_trust_title)
+                .setMessage(getString(trusted ? R.string.home_signer_untrust_message : R.string.home_signer_trust_message, key))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(trusted ? R.string.home_signer_untrust : R.string.home_signer_trust, (d, w) -> {
+                    ps.reso.instaeclipse.utils.ipc.CompanionBridge.setUserTrusted(requireContext(), !trusted);
+                    showSignerTrust(pkg);
+                })
+                .show();
     }
 
     private void launchPackage(String pkg) {
@@ -412,9 +482,9 @@ public class HomeFragment extends Fragment {
     // =========================================================
 
     /**
-     * FeaturesFragment's "Restart App" only asks the user to kill Instagram manually. Here we
-     * first try a root force-stop + relaunch; without root we fall back to that same message and
-     * open Instagram's App info page, where the Force stop button lives.
+     * Restarts Instagram without root (like the no-root mods): asks the module running inside
+     * Instagram to relaunch its own host — the same self-restart the in-app overlay uses — then
+     * makes sure Instagram is up in case it wasn't running. No su / am force-stop.
      */
     private void restartInstagram() {
         final String pkg = activePackage;
@@ -422,37 +492,21 @@ public class HomeFragment extends Fragment {
             ps.reso.instaeclipse.utils.toast.IeToast.makeText(requireContext(), getString(R.string.not_installed_instagram), Toast.LENGTH_SHORT).show();
             return;
         }
-        restartInstagramButton.setEnabled(false);
-        new Thread(() -> {
-            boolean ok = false;
-            try {
-                Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "am force-stop " + pkg});
-                if (p.waitFor(15, TimeUnit.SECONDS)) {
-                    ok = p.exitValue() == 0;
-                } else {
-                    p.destroy();
-                }
-            } catch (Throwable ignored) { }
-            final boolean rooted = ok;
-            mainHandler.post(() -> {
-                if (!isAdded() || getView() == null) return;
-                restartInstagramButton.setEnabled(true);
-                if (rooted) {
-                    moduleConfirmed = false;
-                    updateStatusPill();
-                    ps.reso.instaeclipse.utils.toast.IeToast.makeText(requireContext(), getString(R.string.home_restart_done), Toast.LENGTH_SHORT).show();
-                    mainHandler.postDelayed(() -> launchPackage(pkg), 400);
-                } else {
-                    ps.reso.instaeclipse.utils.toast.IeToast.makeText(requireContext(), getString(R.string.ig_toast_restart_manual), Toast.LENGTH_LONG).show();
-                    try {
-                        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        intent.setData(Uri.parse("package:" + pkg));
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(intent);
-                    } catch (Throwable ignored) { }
-                }
-            });
-        }, "ie-restart-ig").start();
+        try {
+            Intent b = new Intent(ps.reso.instaeclipse.utils.core.CommonUtils.ACTION_RESTART);
+            b.setPackage(pkg);
+            ps.reso.instaeclipse.utils.core.CommonUtils.broadcastToInstagram(requireContext(), b);
+        } catch (Throwable ignored) { }
+        moduleConfirmed = false;
+        updateStatusPill();
+        // Show the "restarted" toast a second later so it lands as Instagram is coming back, not the
+        // moment it starts closing. Capture context/text now in case the fragment is gone by then.
+        final android.content.Context toastCtx = requireContext().getApplicationContext();
+        final String toastMsg = getString(R.string.home_restart_done);
+        mainHandler.postDelayed(
+                () -> ps.reso.instaeclipse.utils.toast.IeToast.makeText(toastCtx, toastMsg, Toast.LENGTH_SHORT).show(), 1000);
+        // If Instagram was running it restarts itself above; this also brings it up if it was closed.
+        mainHandler.postDelayed(() -> launchPackage(pkg), 1200);
     }
 
     // =========================================================
@@ -695,7 +749,8 @@ public class HomeFragment extends Fragment {
                 new Contributor("dpwbusr", "https://github.com/dpwbusr", null, null),
                 new Contributor("d9k6s", "https://github.com/d9k6s", null, null),
                 new Contributor("izadiegizabal", "https://github.com/izadiegizabal", null, null),
-                new Contributor("b4lol", "https://github.com/b4lol", null, null)
+                new Contributor("b4lol", "https://github.com/b4lol", null, null),
+                new Contributor("SysAdminDoc", "https://github.com/SysAdminDoc", null, null)
         );
 
         List<Contributor> specialThanks = Arrays.asList(

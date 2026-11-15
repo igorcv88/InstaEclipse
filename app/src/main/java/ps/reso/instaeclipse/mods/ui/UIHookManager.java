@@ -62,17 +62,12 @@ public class UIHookManager {
         return main != null && !main.isFinishing() ? main : ctx;
     }
 
-    /**
-     * Activities that already have a pending OnGlobalLayoutListener registered.
-     * Used only to prevent duplicate listener registrations when the search view
-     * is not yet visible at setup time.
-     */
+    /** Activities with a pending OnGlobalLayoutListener, to avoid duplicate registrations when the
+     *  search view isn't visible yet at setup. */
     private static final java.util.WeakHashMap<Activity, Boolean> sGlobalListenerPending =
             new java.util.WeakHashMap<>();
-    /**
-     * Tracks whether the GlobalLayoutListener path has completed for an activity,
-     * so we don't keep registering new listeners on every resume after search is found.
-     */
+    /** Marks the GlobalLayoutListener path as completed for an activity, so new listeners aren't
+     *  registered on every resume after search is found. */
     private static final java.util.WeakHashMap<Activity, Boolean> sSearchWiringDone =
             new java.util.WeakHashMap<>();
 
@@ -119,15 +114,18 @@ public class UIHookManager {
         ps.reso.instaeclipse.mods.ui.DistractionFreeUIHook.watchActivity(activity);
         ps.reso.instaeclipse.mods.ui.StoryTrayHook.watchActivity(activity);
 
+        // Glass navigation bar: draw Instagram's floating tab bar as blurred glass.
+        ps.reso.instaeclipse.mods.ui.GlassTabBarHook.watchActivity(activity);
+
         // Fancy bio fonts: the bio's "Change font" button opens the module's font picker.
         ps.reso.instaeclipse.mods.ui.FancyBioFontHook.watchActivity(activity);
 
         // Cache resource IDs once per IG install (string table lookup is non-trivial).
         ensureIdsCached(activity);
 
-        // Always re-apply the search long-press listener. Instagram may overwrite it after
-        // a config change (e.g. when InstaEclipse settings are toggled), so we cannot skip
-        // this on resume — we just avoid the expensive getIdentifier() call via the cache.
+        // Always re-apply the search long-press listener. Instagram may overwrite it after a config
+        // change (e.g. when InstaEclipse settings are toggled), so it can't be skipped on resume —
+        // only the expensive getIdentifier() call is avoided via the cache.
         boolean anySearchFound = false;
         if (sSearchTabId != 0) {
             View v = activity.findViewById(sSearchTabId);
@@ -138,9 +136,9 @@ public class UIHookManager {
             if (v != null) { processSearchView(activity, v, "action_bar_end_action_buttons"); anySearchFound = true; }
         }
 
-        // Register at most ONE GlobalLayoutListener per activity to retry search wiring
-        // when the view isn't inflated yet. Skip if we already found search, if a listener
-        // is already pending, or if the listener already completed successfully.
+        // Register at most ONE GlobalLayoutListener per activity to retry search wiring when the
+        // view isn't inflated yet. Skip if search was already found, a listener is already pending,
+        // or the listener already completed.
         if (!anySearchFound
                 && !Boolean.TRUE.equals(sGlobalListenerPending.get(activity))
                 && !Boolean.TRUE.equals(sSearchWiringDone.get(activity))) {
@@ -245,20 +243,20 @@ public class UIHookManager {
     private static void onMainActivityCreated(Activity activity) {
         currentActivity = activity;
 
-        // Use runOnUiThread to ensure we are touching the UI safely
+        // Touch the UI on the UI thread.
         activity.runOnUiThread(() -> {
             try {
-                // 1. Initialize Hooks
                 setupHooks(activity);
 
-                // 2. Delay UI injections slightly.
-                // Instagram's Main is complex; the Inbox/UI might not be inflated immediately.
+                // Delay UI injections: Instagram's Main is complex, the Inbox/UI might not be inflated yet.
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     try {
                         // Add the Ghost Emoji next to Inbox
                         addGhostEmojiNextToInbox(activity, GhostModeUtils.isGhostModeActive());
 
-                        // 3. Show Success Toast
+                        // Durable health summary (independent of the toast setting).
+                        if (!CustomToast.toastShown) FeatureStatusTracker.logHealth(activity.getApplicationContext());
+
                         if (FeatureFlags.showFeatureToasts && !CustomToast.toastShown) {
                             CustomToast.toastShown = true;
 
@@ -320,6 +318,28 @@ public class UIHookManager {
         };
         ps.reso.instaeclipse.utils.core.IpcSecurity.registerCompanionOnlyReceiver(context, receiver,
                 new IntentFilter("ps.reso.instaeclipse.ACTION_IMPORT_CONFIG"));
+    }
+
+    /** Shows the companion app's download toasts in Instagram, in the InstaEclipse style. */
+    public static void registerToastRelayReceiver(android.content.Context context) {
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context ctx, Intent intent) {
+                String text = intent.getStringExtra(ps.reso.instaeclipse.utils.toast.IeToast.EXTRA_TEXT);
+                if (text == null || text.isEmpty() || text.length() > 500) return;
+                if (!ps.reso.instaeclipse.utils.toast.IeToast.inForeground(ctx)) return; // the companion shows its own
+                ps.reso.instaeclipse.utils.toast.IeToast.makeText(ctx.getApplicationContext(), text,
+                        intent.getBooleanExtra(ps.reso.instaeclipse.utils.toast.IeToast.EXTRA_LONG, false)
+                                ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show();
+                if (isOrderedBroadcast()) setResultCode(1);
+            }
+        };
+        try {
+            ps.reso.instaeclipse.utils.core.IpcSecurity.registerCompanionOnlyReceiver(context, receiver,
+                    new IntentFilter(ps.reso.instaeclipse.utils.toast.IeToast.ACTION_RELAY));
+        } catch (Throwable e) {
+            ModuleLog.line("(InstaEclipse | ToastRelay): ❌ " + e.getMessage());
+        }
     }
 
     /** Registers a receiver in the Instagram process to restore settings from a backup JSON. */

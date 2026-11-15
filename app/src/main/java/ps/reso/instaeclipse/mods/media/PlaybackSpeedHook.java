@@ -39,7 +39,7 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
  * Playback speed for feed videos and a forced reel seek bar (#247).
  *
  * Feed: IG's feed player (class using "IgFeedVideoPlayer: Persistent Visible Cover Image",
- * X.05fU on 452) starts a video via its (Media, …)boolean method; we keep the last instance.
+ * X.05fU on 452) starts a video via its (Media, …)boolean method; the last instance is kept.
  * The underlying Groot player's speed setter is the (float) caller of the method that uses
  * "setPlaybackSpeed" (X.01Nh.A0L → X.01Om.A0R on 452) — the same path IG's own hold-for-2x uses.
  * The chosen speed is re-applied to every video that starts afterwards (1x = off).
@@ -221,9 +221,9 @@ public class PlaybackSpeedHook {
     }
 
     // IG 452 only speeds up a hold on the left edge of a reel; a hold elsewhere pauses it. The
-    // right-half hold (left of the like/comment/share column) is ours: just before IG's long press
-    // fires, IG gets an ACTION_CANCEL (so it never pauses) and the rest of the gesture is ours,
-    // 2x until the finger lifts.
+    // right-half hold (left of the like/comment/share column) is handled here: just before IG's
+    // long press fires it gets an ACTION_CANCEL (so it never pauses), and the rest of the gesture
+    // runs as 2x until the finger lifts.
     private static volatile boolean rightActive;
     private static boolean rightPending;
     private static boolean INJECTING;
@@ -494,6 +494,38 @@ public class PlaybackSpeedHook {
         } catch (Throwable t) {
             ModuleLog.line(TAG + "⚠️ reel scrubber: " + t);
         }
+    }
+
+    // ---- Reused by FeedVideoControlsHook (in-feed tap/seek/hold/skip, mods.extras) ----
+
+    /** The IgFeedVideoPlayer instance that started/played last, or null. */
+    public static Object currentFeedPlayer() {
+        WeakReference<Object> ref = lastPlayer;
+        return ref != null ? ref.get() : null;
+    }
+
+    /** The speed chosen in the ⋯ chooser (1f when none), so a feed hold restores it on release. */
+    public static float activeSpeed() {
+        return speed;
+    }
+
+    /** Sets {@code s} on every live story/reel/feed player and Hero player now; true if any took it. */
+    public static boolean applyLiveSpeed(float s) {
+        boolean ok = applyToHeroes(s);
+        ok |= applyToPlayers(s);
+        Object p = currentFeedPlayer();
+        if (p != null) ok |= apply(p, s);
+        return ok;
+    }
+
+    /** A snapshot of the live Hero player instances, for FeedVideoControlsHook's seek. */
+    public static java.util.List<Object> liveHeroPlayers() {
+        synchronized (HEROES) { return new ArrayList<>(HEROES.keySet()); }
+    }
+
+    /** True while a reel (not a feed video) is on screen, so feed gestures stand aside. */
+    public static boolean reelShowing(Activity a) {
+        return reelOnScreen(a);
     }
 
     /** Speed chooser from the post ⋯ menu; applies to the playing feed video and the next ones. */

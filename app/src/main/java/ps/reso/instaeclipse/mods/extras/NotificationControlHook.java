@@ -253,7 +253,8 @@ public final class NotificationControlHook {
     }
 
     static synchronized void recount(NotificationManager manager, Notification posted, String group) {
-        Map<String, Integer> counts = new HashMap<>();
+        // Count each (tag, id) once, whether it is still pending or already active.
+        Map<Name, String> counted = new HashMap<>();
         Map<String, Sample> newest = new HashMap<>();
         Map<String, Long> newestAt = new HashMap<>();
         Map<String, Notification> summaries = new HashMap<>();
@@ -269,7 +270,7 @@ public final class NotificationControlHook {
             Name name = new Name(shown.getTag(), shown.getId());
             if (pending.containsKey(name)) continue;
             if (in == null || !in.startsWith(ONE_GROUP) || isSummary(active)) continue;
-            counts.merge(in, 1, Integer::sum);
+            counted.put(name, in);
             if (shown.getPostTime() >= newestAt.getOrDefault(in, Long.MIN_VALUE)) {
                 newestAt.put(in, shown.getPostTime());
                 newest.put(in, new Sample(active));
@@ -277,16 +278,16 @@ public final class NotificationControlHook {
         }
         for (Map.Entry<Name, Pending> entry : pending.entrySet()) {
             Pending post = entry.getValue();
-            counts.merge(post.group, 1, Integer::sum);
+            counted.put(entry.getKey(), post.group);
             if (post.at >= newestAt.getOrDefault(post.group, Long.MIN_VALUE)) {
                 newestAt.put(post.group, post.at);
                 newest.put(post.group, post.sample);
             }
         }
-        if (posted != null && group != null) {
-            counts.merge(group, 1, Integer::sum);
-            newest.put(group, new Sample(posted));
-        }
+        // The new post is already represented by counted's pending or active identity.
+        // It may still be the newest display sample, but must not add another count.
+        if (posted != null && group != null) newest.put(group, new Sample(posted));
+        Map<String, Integer> counts = NotificationGroupCounts.count(counted);
         Set<String> groups = new HashSet<>(summaries.keySet());
         if (group != null) groups.add(group);
         for (String each : groups) {

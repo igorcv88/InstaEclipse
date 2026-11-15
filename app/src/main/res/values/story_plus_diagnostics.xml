@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="ig_dialog_misc_viewer_diagnostics">Story Viewer Diagnostics (experimental)</string>
-    <string name="ig_dialog_misc_preview_diagnostics">Story Preview Diagnostics (experimental)</string>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="ig_dialog_misc_viewer_diagnostics" tools:ignore="MissingTranslation">Story Viewer Diagnostics (experimental)</string>
+    <string name="ig_dialog_misc_preview_diagnostics" tools:ignore="MissingTranslation">Story Preview Diagnostics (experimental)</string>
 </resources>

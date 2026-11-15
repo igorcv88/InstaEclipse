@@ -11,8 +11,11 @@ android {
         applicationId "ps.reso.instaeclipse"
         minSdkVersion 28
         targetSdk 36
-        versionCode 20
-        versionName '0.8.2'
+        // CI previews keep the installed version; releases pass the new version explicitly.
+        versionCode project.hasProperty('releaseVersionCode')
+                ? project.property('releaseVersionCode').toString().toInteger() : 20
+        versionName project.hasProperty('releaseVersionName')
+                ? project.property('releaseVersionName').toString() : '0.8.2'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

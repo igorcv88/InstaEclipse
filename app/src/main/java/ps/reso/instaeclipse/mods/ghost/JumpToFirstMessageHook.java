@@ -21,10 +21,9 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 /**
  * Jump to the first message of a DM thread (#244).
  *
- * A header button (next to IG's right-side action buttons) keeps scrolling the thread's message
- * list up. IG loads older pages itself when the list nears its oldest end, so we only stop once
- * the list can't scroll further up and has stopped growing for a while. UI-only: no IG internals,
- * just the RecyclerView (by class name) and View scrolling. Tap again to stop.
+ * Header button scrolls the message list up; IG paginates older messages itself, so it stops only
+ * once the list can't scroll further up and has stopped growing. UI-only: RecyclerView (by class
+ * name) and View scrolling, no IG internals. Tap again to stop.
  */
 public class JumpToFirstMessageHook {
 

@@ -8,12 +8,12 @@ import android.content.Intent;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Hands a piece of text to the user's translation app (#233) — no network or API keys of our own.
+ * Hands text to the user's translation app (#233) — no network or API keys of our own.
  *
- * Tries, in order: the system translate intent (handled by Google Translate and others), a
- * PROCESS_TEXT chooser (DeepL, Translate, …), then a plain share sheet. Each step is a straight
- * startActivity in try/catch rather than a resolveActivity check, because Instagram's own
- * package-visibility (<queries>) would hide most handlers from a lookup.
+ * Tries, in order: the system translate intent (Google Translate and others), a PROCESS_TEXT
+ * chooser (DeepL, Translate, …), then a plain share sheet. Each step is a straight startActivity in
+ * try/catch rather than a resolveActivity check, because Instagram's package-visibility (<queries>)
+ * would hide most handlers from a lookup.
  */
 public final class TextTranslator {
 

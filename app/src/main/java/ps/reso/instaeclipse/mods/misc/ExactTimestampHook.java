@@ -29,7 +29,7 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
  * formatter in the time-utils class (X.03A7 on 451, X.03do on 447, X.03ib on 436):
  * {@code static String A08(Resources, Enum style, <self>, Integer, double a, double b, boolean×4)}.
  * It formats {@code b - a} seconds. For "ago" texts a = the timestamp and b = now; for countdowns
- * ("x left") the order is flipped (a = now, b = future), which we leave alone.
+ * ("x left") the order is flipped (a = now, b = future), left alone.
  *
  * Anchor: the class is the only one using "%d:%02d:%02d", "MMMM d" and "MMM d" (436/447/451);
  * the method is picked by shape, not name.

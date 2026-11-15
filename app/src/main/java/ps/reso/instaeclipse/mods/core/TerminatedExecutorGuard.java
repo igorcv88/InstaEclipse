@@ -7,23 +7,18 @@ import ps.reso.instaeclipse.xposedcompat.XposedHelpers;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Crash guard for the carousel / realtime teardown race seen on Instagram 446+ and 447.0.0.39+.
+ * Crash guard for the carousel / realtime teardown race on Instagram 446+ and 447.0.0.39+.
  *
- * When a carousel's realtime media stream (and, downstream, the Analytics2 event pipeline) is torn
- * down — e.g. right after a download or copy-media action — IG's native
+ * When a carousel's realtime media stream (and downstream the Analytics2 event pipeline) is torn
+ * down — e.g. after a download or copy-media action — IG's native
  * {@code TigonRepeatingForwardingRequestToken} / analytics processor can still submit a task to a
- * {@link java.util.concurrent.ScheduledThreadPoolExecutor} that has ALREADY shut down. The executor's
- * default {@link java.util.concurrent.ThreadPoolExecutor.AbortPolicy} then throws
- * {@link java.util.concurrent.RejectedExecutionException}, which unwinds back through native JNI and
- * hard-crashes Instagram (every crash variant terminates at AbortPolicy.rejectedExecution). The task
- * can never run on a dead executor, so the only sane outcome is to drop it — exactly what a
- * DiscardPolicy would do — instead of crashing.
+ * {@link java.util.concurrent.ScheduledThreadPoolExecutor} that has already shut down. The default
+ * {@link java.util.concurrent.ThreadPoolExecutor.AbortPolicy} then throws
+ * {@link java.util.concurrent.RejectedExecutionException}, which unwinds through native JNI and
+ * hard-crashes Instagram. A dead executor can never run the task, so drop it instead of crashing.
  *
- * This hook narrows to precisely that: it intercepts {@code AbortPolicy.rejectedExecution} and
- * swallows the rejection ONLY when the target executor is already shut down. A rejection on a live
- * executor (genuine queue-full backpressure) still throws normally, so nothing about normal
- * operation changes. The hook sits on the rejection path only (never a hot path) and is fully
- * try/catch-guarded.
+ * Intercepts {@code AbortPolicy.rejectedExecution} and swallows the rejection only when the target
+ * executor is already shut down. A rejection on a live executor (genuine backpressure) still throws.
  */
 public class TerminatedExecutorGuard {
 
@@ -38,8 +33,7 @@ public class TerminatedExecutorGuard {
                         protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
                             try {
                                 ThreadPoolExecutor ex = (ThreadPoolExecutor) param.args[1];
-                                // isShutdown() is true for SHUTDOWN/STOP/TERMINATED — in every one of
-                                // those states no new task can ever run, so dropping it is correct.
+                                // isShutdown() covers SHUTDOWN/STOP/TERMINATED — no new task can run, so drop it.
                                 if (ex != null && ex.isShutdown()) {
                                     param.setResult(null); // return void without throwing => task dropped
                                     ModuleLog.probe("(IE|ExecGuard) dropped task rejected by shut-down executor");

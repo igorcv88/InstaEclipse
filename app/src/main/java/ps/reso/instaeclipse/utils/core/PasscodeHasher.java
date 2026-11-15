@@ -9,12 +9,12 @@ import javax.crypto.spec.PBEKeySpec;
 /**
  * Hashing for the DM / whole-app lock passcode.
  *
- * <p>New hashes use PBKDF2-HMAC-SHA256 and are stored as {@code pbkdf2$<iterations>$<hex>}.
- * Hashes created by older builds are a bare hex {@code sha256(salt + passcode)}; they still
- * verify, and {@link #needsUpgrade} tells the caller to re-hash after a successful unlock.
+ * <p>New hashes are PBKDF2-HMAC-SHA256, stored as {@code pbkdf2$<iterations>$<hex>}. Older builds
+ * stored bare hex {@code sha256(salt + passcode)}; those still verify, and {@link #needsUpgrade}
+ * signals a re-hash after a successful unlock.
  *
- * <p>A short numeric PIN has a tiny keyspace, so no hash makes it strong against someone who
- * can read Instagram's private prefs. PBKDF2 only raises the cost of that offline guess.
+ * <p>A short numeric PIN has a tiny keyspace; PBKDF2 only raises the cost of an offline guess by
+ * someone who can read Instagram's private prefs, it can't make the PIN strong.
  */
 public final class PasscodeHasher {
 

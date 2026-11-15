@@ -232,9 +232,9 @@ public class RemoveMetaAIHook {
     /**
      * Search-results "Ask Meta AI" HCM card (IG 446+, Litho-rendered — not XML-inflatable). The
      * card's data comes from ClipsTopSerpDataSource.createDefaultMetaAIHcmFetchResults(...); if that
-     * produces no results, no card is shown. We anchor on the method's stable trace-marker string
-     * (the class itself is obfuscated) and empty its result at runtime. Only collection/map results
-     * are cleared; anything else is left untouched (and its type logged) so we never break the SERP.
+     * produces no results, no card is shown. Anchored on the method's stable trace-marker string
+     * (the class itself is obfuscated); its result is emptied at runtime. Only collection/map results
+     * are cleared; anything else is left untouched (and its type logged) so the SERP is never broken.
      */
     private void installSearchSerpMetaAiHcm(DexKitBridge bridge, ClassLoader cl) {
         XC_MethodHook neuter = new XC_MethodHook() {
@@ -300,8 +300,8 @@ public class RemoveMetaAIHook {
 
     /**
      * Meta AI attribution subtitle on video posts (the "… Meta AI" row on the media). It is
-     * built by MetaAIVideoAttributionSubtitleUseCase.getUiState(Media)->uiState. We can't null
-     * the result (a downstream final field would NPE), so we blank the UI-state's String fields
+     * built by MetaAIVideoAttributionSubtitleUseCase.getUiState(Media)->uiState. The result can't
+     * be nulled (a downstream final field would NPE), so the UI-state's String fields are blanked
      * — the row then renders no Meta AI text. Anchored on the use-case's stable marker string.
      */
     private void installVideoAttribution(DexKitBridge bridge, ClassLoader cl) {
@@ -384,8 +384,8 @@ public class RemoveMetaAIHook {
     /**
      * Drops the Meta AI item ("Ask Meta AI" / GenAI info) from the reel/post overflow (⋮) menus.
      * Those menus are built from lists of com.instagram.feed.media.mediaoption.MediaOption$Option;
-     * we hook the list builders (anchored by their referenced enum fields) and remove any option
-     * whose enum name is a Meta-AI one. Stable-field anchored — no obfuscated X.* names.
+     * the list builders are hooked (anchored by their referenced enum fields) and any option whose
+     * enum name is a Meta-AI one is removed. Stable-field anchored — no obfuscated X.* names.
      */
     private void installMenuOptionFilter(DexKitBridge bridge, ClassLoader cl) {
         final String od = "Lcom/instagram/feed/media/mediaoption/MediaOption$Option;";

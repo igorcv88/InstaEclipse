@@ -21,10 +21,10 @@ import ps.reso.instaeclipse.utils.i18n.I18n;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Per-chat read receipts (#227), chosen from inside the chat: with "Send read receipts to specific
+ * Per-chat read receipts (#227), toggled from inside the chat: with "Send read receipts to specific
  * chats" on, the thread header menu gets "Send read receipts in this chat" / "Stop read receipts in
  * this chat". Same triggers and thread-id lookup as HideChatsHook (thread activities' onResume plus
- * the thread-fragment tracker), so it works whether the chat is a ModalActivity or a fragment.
+ * the thread-fragment tracker), for ModalActivity or fragment chats alike.
  * GhostDMSeenHook and the network interceptor let "Seen" through for listed threads.
  */
 public class ReadReceiptChatHook {

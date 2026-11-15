@@ -36,22 +36,20 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
  * Upload an Instant from gallery (#199). The quicksnap camera is Jetpack Compose with a suspend,
- * obfuscated send pipeline, so we don't build the payload. Instead:
- *   1. Detect the camera is open (a QuickSnapCameraViewModel instance method fires) and inject a
- *      floating "Gallery" chip onto the hosting Activity's decor (the module's decor-overlay
- *      pattern — works regardless of the Compose content).
- *   2. The chip launches the system image picker.
- *   3. We receive the pick by hooking base Activity.onActivityResult (filtered by a unique request
- *      code, so IG's Activity subclassing doesn't matter), decode it to a Bitmap, and mark it
- *      pending.
- *   4. When the user taps the shutter, QuickSnapCameraViewModel.A02(Context,Bitmap,Bitmap,…) fires;
- *      we swap the captured Bitmap (arg1) for the gallery bitmap and let IG build+send the payload.
+ * obfuscated send pipeline, so the payload isn't rebuilt. Instead:
+ *   1. Camera-open (a QuickSnapCameraViewModel instance method fires) injects a floating "Gallery"
+ *      chip onto the host Activity's decor (module decor-overlay pattern, regardless of Compose).
+ *   2. Chip launches the system image picker.
+ *   3. Pick arrives via base Activity.onActivityResult (filtered by a unique request code, so IG's
+ *      Activity subclassing doesn't matter), decoded to a Bitmap and marked pending.
+ *   4. On shutter, QuickSnapCameraViewModel.A02(Context,Bitmap,Bitmap,…) fires; the captured Bitmap
+ *      (arg1) is swapped for the gallery bitmap and IG builds+sends the payload.
  */
 public class InstantUploadHook {
 
     private static final String VM_CLASS =
             "com.instagram.quicksnap.camera.domain.QuickSnapCameraViewModel";
-    private static final int PICK_REQUEST = 0x1E5A; // unique request code for our picker
+    private static final int PICK_REQUEST = 0x1E5A; // unique request code for the picker
 
     static volatile Bitmap pendingBitmap;
     private static volatile long pendingSetAt = 0;   // when pendingBitmap was armed (staleness guard)
@@ -62,11 +60,11 @@ public class InstantUploadHook {
     private static View chipIcon;              // gallery glyph (idle state)
     private static ImageView chipThumb;        // picked photo, circle-cropped (ready state)
     private static View chipBadge;             // green check badge (ready state)
-    private static Activity chipHost;          // the Activity we injected them on
+    private static Activity chipHost;          // Activity the overlay is injected on
     private static boolean lifecycleRegistered = false;
-    // True while OUR gallery picker is on top of the camera. The camera screen pauses/stops while
-    // the picker is open; the chip must survive that, otherwise backing out of the picker without
-    // choosing anything leaves the camera with no Gallery chip until it is reopened.
+    // True while the gallery picker is on top of the camera. The camera pauses/stops while the
+    // picker is open; the chip must survive that, or backing out without choosing leaves the
+    // camera with no Gallery chip until it is reopened.
     private static volatile boolean pickerOpen = false;
 
     public void install(ClassLoader cl) {
@@ -139,6 +137,17 @@ public class InstantUploadHook {
         }
 
         static SwapBinding resolve(Class<?> vm, Class<?> contextType, Class<?> bitmapType) {
+            // ≤452 published the capture handoff as a STATIC helper that carries its own view-model
+            // in an argument slot (onCaptured$3$1 invoke-static). 455 moved the photo handoff onto
+            // the view model itself (onCaptured$3$1 invoke-virtual A15), so the view model is now the
+            // receiver and no longer a parameter. Prefer the static shape for the older builds; fall
+            // back to the instance shape only when no unique static handoff exists.
+            SwapBinding found = resolveStatic(vm, contextType, bitmapType);
+            if (found != null) return found;
+            return resolveInstance(vm, contextType, bitmapType);
+        }
+
+        private static SwapBinding resolveStatic(Class<?> vm, Class<?> contextType, Class<?> bitmapType) {
             SwapBinding found = null;
             for (Method method : ps.reso.instaeclipse.utils.core.SafeReflect.methods(vm)) {
                 if (!Modifier.isStatic(method.getModifiers()) || method.getReturnType() != Object.class) continue;
@@ -166,14 +175,49 @@ public class InstantUploadHook {
             return found;
         }
 
+        /**
+         * 455 handoff: an instance method on the view model
+         *   A15(Context, Bitmap, model, …, String, String, …, float, long, boolean) → Object
+         * taking the captured Bitmap at arg[1]. Because it is an instance method, the view model is
+         * the receiver (thisObject), not a parameter — so there is NO owner slot, which is exactly
+         * what tells the single photo handoff apart from the static video/File path (A06, which still
+         * carries a File + an owner slot). Anchored on: non-static, returns Object, Context+Bitmap
+         * lead, a model type at arg[2], a single Bitmap, zero owner slots, and no File. On 455 only
+         * A15 satisfies this, so the match is unique.
+         */
+        private static SwapBinding resolveInstance(Class<?> vm, Class<?> contextType, Class<?> bitmapType) {
+            SwapBinding found = null;
+            for (Method method : ps.reso.instaeclipse.utils.core.SafeReflect.methods(vm)) {
+                if (Modifier.isStatic(method.getModifiers()) || method.getReturnType() != Object.class) continue;
+                if (method.isSynthetic() || method.isBridge()) continue;
+                Class<?>[] p = method.getParameterTypes();
+                if (p.length < 4 || p[0] != contextType || p[1] != bitmapType) continue;
+                if (!modelType(p[2], bitmapType) || p[2] == vm) continue;
+                int bitmaps = 0, owners = 0;
+                boolean hasFile = false;
+                for (Class<?> type : p) {
+                    if (type == bitmapType) bitmaps++;
+                    if (type == vm) owners++;
+                    if (type == java.io.File.class) hasFile = true;
+                }
+                if (hasFile || bitmaps != 1 || owners != 0) continue;
+                if (found != null) return null;                 // ambiguous: bail, keep it safe
+                found = new SwapBinding(method, bitmapType, -1, -1); // no secondary, no owner slot
+            }
+            return found;
+        }
+
         private static boolean modelType(Class<?> type, Class<?> bitmapType) {
             return !type.isPrimitive() && type != bitmapType && type != String.class
                     && type != Object.class && type != java.io.File.class;
         }
 
         boolean accepts(Object[] args) {
+            // vmIndex < 0: instance handoff (455) — the view model is the receiver, not an argument,
+            // so there is no owner slot in args to validate.
             return args != null && args.length == method.getParameterCount()
-                    && bitmapType.isInstance(args[1]) && vmType.isInstance(args[vmIndex])
+                    && bitmapType.isInstance(args[1])
+                    && (vmIndex < 0 || vmType.isInstance(args[vmIndex]))
                     && (secondaryBitmapIndex < 0 || args[secondaryBitmapIndex] == null
                     || bitmapType.isInstance(args[secondaryBitmapIndex]));
         }
@@ -420,7 +464,7 @@ public class InstantUploadHook {
     private static void injectChip(Activity act) {
         try {
             // Only inject on the camera's own modal window — never the long-lived MainTabActivity
-            // (which would glue the chip app-wide). The quicksnap camera runs in a modal activity.
+            // (which would glue the chip app-wide).
             if (!act.getClass().getName().contains("ModalActivity")) return;
             if (chip != null && chipHost == act) return; // already showing on this screen
             removeChip();                                 // clear any stale chip from a prior screen

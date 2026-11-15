@@ -3,15 +3,12 @@ package ps.reso.instaeclipse.utils.core;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.base.BaseQuery;
+import org.luckypray.dexkit.query.base.BaseFinder;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
 import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.MethodDataList;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.security.MessageDigest;
 import java.util.List;
 
 /**
@@ -26,28 +23,6 @@ import java.util.List;
  * direct lookups. The result is real DexKit data, so callers keep using it as before.
  */
 public final class DexKitQueryCache {
-
-    /** {@code BaseQuery.innerBuild(FlatBufferBuilder)}: the bytes DexKit itself sends to the native
-     *  scan. Reflective, as flatbuffers is only on DexKit's runtime classpath. */
-    private static final Method INNER_BUILD, SIZED_BYTES;
-    private static final Constructor<?> NEW_BUILDER;
-
-    static {
-        Method build = null, bytes = null;
-        Constructor<?> ctor = null;
-        try {
-            Class<?> fbb = Class.forName("com.google.flatbuffers.FlatBufferBuilder", false, BaseQuery.class.getClassLoader());
-            ctor = fbb.getConstructor();
-            bytes = fbb.getMethod("sizedByteArray");
-            build = BaseQuery.class.getDeclaredMethod("innerBuild", fbb);
-            build.setAccessible(true);
-        } catch (Throwable ignored) {
-            build = null; // no key: every query goes straight to DexKit
-        }
-        INNER_BUILD = build;
-        SIZED_BYTES = bytes;
-        NEW_BUILDER = ctor;
-    }
 
     private DexKitQueryCache() {}
 
@@ -102,16 +77,12 @@ public final class DexKitQueryCache {
         return DexKitCache.loadString(key);
     }
 
-    /** Hash of the query as DexKit serializes it; null when it cannot be built. */
-    static String key(String kind, BaseQuery query) {
-        if (INNER_BUILD == null) return null;
+    /** Stable hash of the query, from DexKit's own {@code hashKey()}; null when unavailable. */
+    static String key(String kind, BaseFinder query) {
         try {
-            Object fbb = NEW_BUILDER.newInstance();
-            INNER_BUILD.invoke(query, fbb);
-            byte[] digest = MessageDigest.getInstance("SHA-1").digest((byte[]) SIZED_BYTES.invoke(fbb));
-            StringBuilder sb = new StringBuilder("q_").append(kind).append('_');
-            for (byte b : digest) sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-            return sb.toString();
+            String h = query.hashKey();
+            if (h == null || h.isEmpty()) return null;
+            return "q_" + kind + "_" + h;
         } catch (Throwable t) {
             return null;
         }

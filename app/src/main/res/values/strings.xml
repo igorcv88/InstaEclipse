@@ -2,7 +2,7 @@
     <!-- app wide -->
     <string name="app_name">InstaEclipse</string>
     <string name="module_description" tools:ignore="MissingTranslation">Enhance your Instagram experience</string>
-    <string name="version" translatable="false">v0.8.2</string>
+    <string name="version" translatable="false">v0.8.3</string>
     <string name="home">Home</string>
     <string name="features">Features</string>
     <string name="help">Help</string>
@@ -57,12 +57,12 @@
 
     <!-- faq -->
     <string name="frequently_asked_questions">Frequently Asked Questions</string>
-    <string name="faq_1"><b>1. Not working/crashes when using Google Play Version?</b>\n- Use APKMirror APKs</string>
-    <string name="faq_2"><b>2. Module not enabled?</b>\n- Disable and re-enable the module in Vector.</string>
-    <string name="faq_3"><b>3. Features not working?</b>\n- Force stop and restart Instagram.</string>
-    <string name="faq_4"><b>4. Developer options cause crashes?</b>\n- Follow the developer options guide.</string>
-    <string name="faq_5"><b>5. Developer options have weird labels or numbers?</b>\n- Use Beta or Alpha versions as Stable versions have obfuscation.</string>
-    <string name="faq_6"><b>6. Distraction Free enabled but content still appears?</b>\n- Force stop Instagram and clear its cache.</string>
+    <string name="faq_1"><b>1. Crashes or won\'t open after a Play Store update?</b>\n- Install Instagram from APKMirror instead of the Play Store.</string>
+    <string name="faq_2"><b>2. Module not loading?</b>\n- Turn InstaEclipse off and on again in Vector, then restart Instagram.</string>
+    <string name="faq_3"><b>3. A feature stopped working?</b>\n- Force stop Instagram and open it again.</string>
+    <string name="faq_4"><b>4. Developer Options crash Instagram?</b>\n- Follow the Developer Options guide in this Help tab.</string>
+    <string name="faq_5"><b>5. Developer Options show odd labels or numbers?</b>\n- Use a Beta or Alpha build. Stable builds are obfuscated.</string>
+    <string name="faq_6"><b>6. Distraction Free is on but content still shows?</b>\n- Force stop Instagram, then clear its cache.</string>
 
     <!-- guide -->
     <string name="module_not_working_title">Module still isn\'t working?</string>
@@ -214,6 +214,13 @@
     <string name="theme_saved">Theme saved</string>
     <string name="theme_pick_color">Pick a color</string>
     <string name="theme_apply_color">Apply</string>
+    <!-- Advanced Theme Extras -->
+    <string name="theme_section_extras">Theme extras</string>
+    <string name="theme_dynamic_accent">Material You accent</string>
+    <string name="theme_oled_surfaces">Pure black (OLED) surfaces</string>
+    <string name="theme_accent_only">Recolor accent only</string>
+    <string name="theme_accent_color">Accent color</string>
+    <string name="theme_dynamic_accent_unsupported">Material You needs Android 12 or newer</string>
     <string name="theme_rgba_format">R %1$d  G %2$d  B %3$d  A %4$d</string>
     <string name="theme_alpha_format">Opacity: %1$d%%</string>
     <string name="theme_slot_background">Background</string>
@@ -283,6 +290,8 @@
 
     <!-- Ghost Mode options -->
     <string name="ig_dialog_ghost_hide_dm_seen">Hide DM Seen</string>
+    <string name="ig_dialog_ghost_mark_read_local">Mark chats read on this device</string>
+    <string name="ig_dialog_ghost_mark_read_local_hint">While Hide DM Seen is on, opening a chat clears its \"new messages\" highlight on your phone without letting the other person know you saw it. Turn this off to leave chats showing as unread in the list.</string>
     <string name="ig_dialog_ghost_hide_typing">Hide Typing Indicator</string>
     <string name="ig_dialog_ghost_hide_story_views">Hide Story Views</string>
     <string name="ig_dialog_ghost_hide_live_presence">Hide Live Presence</string>
@@ -346,12 +355,17 @@
     <string name="ig_dialog_ghost_edit_history">Keep Edit History of Messages</string>
     <string name="ig_dialog_unsent_title">Unsent Messages</string>
     <string name="ig_dialog_unsent_clear">Clear this chat\'s log</string>
+    <string name="ig_unsent_search">Search kept messages</string>
+    <string name="ig_unsent_search_hint">Text, name or chat</string>
+    <string name="ig_unsent_search_go">Search</string>
+    <string name="ig_unsent_search_none">Nothing matches.</string>
+    <string name="ig_unsent_export_all">Export all chats as JSON</string>
     <string name="ig_dialog_unsent_export">Export as JSON</string>
     <string name="ig_dialog_unsent_exported">Saved to %1$s</string>
     <string name="ig_dialog_auto_clear_cache">Auto-clear cache when large</string>
     <string name="ig_dialog_auto_clear_cache_size">Clear above: %1$d MB (tap to change)</string>
     <string name="ig_dialog_section_auto_clear_cache">Auto-Clear Cache</string>
-    <string name="ig_dialog_auto_clear_cache_desc">Clears Instagram\'s media cache when you leave the app, if it\'s over the chosen size. Only cache is cleared (Instagram rebuilds it) — your data, logins and downloads are never touched.</string>
+    <string name="ig_dialog_auto_clear_cache_desc">Clears Instagram\'s media cache and its analytics/telemetry junk (app_analytics — often the biggest storage hog) when you leave the app, if it\'s over the chosen size. Instagram regenerates all of it — your data, logins and downloads are never touched. Use Clear now to clear and restart immediately.</string>
     <string name="ig_dialog_misc_remove_meta_ai">Remove Meta AI</string>
     <string name="ig_dialog_misc_lock_dms">Lock DMs</string>
     <string name="ig_dialog_misc_lock_dms_set">Set / change code</string>
@@ -391,6 +405,15 @@
     <string name="ig_hide_chat_no_thread">Couldn\'t identify this chat</string>
     <string name="ig_story_cache_title">Cache Stories (24h)</string>
     <string name="ig_dialog_misc_cache_stories">Cache Stories for 24h</string>
+    <string name="ig_instant_history_title">Keep viewed Instants</string>
+    <string name="ig_instant_history_view">View past Instants</string>
+    <string name="ig_instant_history_empty">No Instants yet. Turn this on and open some Instants, they will be kept here.</string>
+    <string name="ig_instant_history_clear">Clear past Instants</string>
+    <string name="ig_instant_history_clear_confirm">Delete all kept Instants? This cannot be undone.</string>
+    <string name="ig_story_pinned_title">Keep stories from chosen accounts</string>
+    <string name="ig_story_pinned_note">Stories you view from these accounts are kept until the limit is reached, then the oldest are replaced.</string>
+    <string name="ig_story_pinned_users">Usernames, separated by spaces or commas</string>
+    <string name="ig_story_pinned_limit">Stories to keep per account</string>
     <string name="ig_story_cache_view">View cached stories</string>
     <string name="ig_story_cache_empty">No cached stories yet. Turn this on, then view some stories — they\'ll be kept here for 24 hours.</string>
     <string name="ig_story_cache_clear">Clear cached stories</string>
@@ -460,6 +483,26 @@
     <string name="ig_dialog_clean_feed_hide_suggested">Hide Suggestions in Feed</string>
     <string name="ig_dialog_clean_feed_hide_threads">Hide Threads Suggestions</string>
     <string name="ig_dialog_clean_feed_hide_liked">Hide Posts You Already Liked</string>
+    <string name="ig_dialog_clean_feed_hide_suggested_reels">Hide Suggestions in Reels</string>
+    <string name="ig_dialog_clean_feed_hide_paid">Hide Paid Partnerships &amp; Sponsored Posts</string>
+    <string name="ig_dialog_menu_explore">Explore</string>
+    <string name="ig_explore_hide_grid">Hide Explore Grid</string>
+    <string name="ig_explore_no_personalization">Explore Without Personalization</string>
+    <string name="ig_explore_hide_search_suggestions">Hide Search Suggestions</string>
+
+    <!-- Reel content filters -->
+    <string name="ig_reels_filter_section">Content filters</string>
+    <string name="ig_reels_filter_ai">Hide AI-labeled reels</string>
+    <string name="ig_reels_filter_caption">Hide reels by caption words</string>
+    <string name="ig_reels_filter_caption_hint">Words or phrases, one per line or comma-separated</string>
+    <string name="ig_reels_filter_language">Hide reels by language</string>
+    <string name="ig_reels_filter_language_hint">Languages to hide (e.g. Arabic, hi, Spanish)</string>
+    <string name="ig_reels_filter_low_views">Hide low-view / low-like reels</string>
+    <string name="ig_reels_filter_min_views">Minimum views</string>
+    <string name="ig_reels_filter_min_likes">Minimum likes</string>
+    <string name="ig_reels_filter_caption_title">Caption word filter</string>
+    <string name="ig_reels_filter_language_title">Language filter</string>
+    <string name="ig_reels_filter_threshold_title">View / like thresholds</string>
     <string name="ig_nav_settings_title">Navigation settings</string>
     <string name="ig_nav_tabs_title">Hide navigation tabs</string>
     <string name="ig_nav_name_home">Home</string>
@@ -495,10 +538,19 @@
     <string name="ig_dialog_downloader_offer_speed">Add Playback Speed to the Post Menu</string>
     <string name="ig_dialog_downloader_reel_scrubber">Always Show the Reel Seek Bar</string>
     <string name="ig_dialog_reels_hold_left_slow">Hold the Left Side for Slow Motion (0.5×)</string>
+    <string name="ig_dialog_feed_video_tap_pause">Tap a Feed Video to Pause</string>
+    <string name="ig_dialog_feed_video_seek_bar">Seek Bar on Feed Videos</string>
+    <string name="ig_dialog_feed_video_hold_2x">Hold a Feed Video for 2×</string>
+    <string name="ig_dialog_feed_video_double_tap_skip">Double-Tap a Feed Video to Skip</string>
+    <string name="ig_feed_video_skip_seconds">Skip length</string>
+    <string name="ig_dialog_feed_video_controls">Video controls</string>
     <string name="ig_dialog_max_upload_quality">Always Upload at Highest Quality</string>
     <string name="ig_media_info_title">Media info</string>
     <string name="ig_media_info_copy">Copy</string>
     <string name="ig_playback_speed_title">Playback speed</string>
+    <string name="ig_background_play_title">Keep Playing in the Background</string>
+    <string name="ig_video_pip_title">Reels Picture-in-Picture</string>
+    <string name="requires_android_15">Requires Android 15+</string>
     <string name="ig_playback_speed_next">Speed set — applies to the next video that starts</string>
     <string name="ig_dialog_distraction_hide_notes_tray">Hide Notes in Messages</string>
     <string name="ig_hide_dm_suggestions">Hide suggested accounts in Messages</string>
@@ -538,6 +590,17 @@
     <string name="ig_profile_spoofer_section_identity">Identity</string>
     <string name="ig_profile_spoofer_section_stats">Stats</string>
     <string name="ig_profile_spoofer_section_badge">Badge</string>
+    <string name="ig_profile_spoofer_section_copy">Copy a profile</string>
+    <string name="ig_profile_spoofer_copy_hint">Username to copy</string>
+    <string name="ig_profile_spoofer_copy_button">Open profile</string>
+    <string name="ig_profile_spoofer_copy_note">Opens that profile in Instagram. Tap the three dots menu there and choose Use as spoofed profile. Your Followers and Following lists then show that account\'s lists.</string>
+    <string name="ig_profile_spoofer_copy_failed">Enter a valid username.</string>
+    <string name="ig_profile_spoofer_use_profile">Use as spoofed profile</string>
+    <string name="ig_profile_spoofer_copied">Profile copied into the spoofer</string>
+    <string name="ig_profile_spoofer_copy_missing">Could not read this profile yet. Wait for it to load and try again.</string>
+    <string name="ig_profile_spoofer_restart">Instagram keeps the copied profile in memory until it restarts. Restart it now to show your own profile again?</string>
+    <string name="ig_profile_spoofer_restart_later">Later</string>
+    <string name="ig_profile_spoofer_restart_toast">Restart Instagram to show your own profile again.</string>
     <string name="ig_profile_spoofer_section_picture">Picture</string>
     <string name="ig_profile_spoofer_username">Username</string>
     <string name="ig_profile_spoofer_name">Name</string>
@@ -643,6 +706,9 @@
     <string name="ig_followers_history_first">Saved your first list: %1$d followers. Check again later to see who unfollowed or followed you.</string>
     <string name="ig_followers_history_changes">Since %1$s: %2$d unfollowed, %3$d new</string>
     <string name="ig_followers_history_summary">%1$d followers · checked %2$s</string>
+    <string name="ig_followers_history_week">Last 7 days: %1$d unfollowed, %2$d new</string>
+    <string name="ig_followers_alert_fewer">You have %1$d fewer followers than at your last check on %2$s. Open Followers and tap Followers history to see who.</string>
+    <string name="ig_followers_alert_stale">Your last followers check was %1$d days ago. Open Followers and tap Followers history.</string>
     <string name="ig_followers_history_empty">No changes recorded yet.</string>
     <string name="ig_followers_history_unfollowed">Unfollowed you</string>
     <string name="ig_followers_history_followed">Followed you</string>
@@ -667,6 +733,9 @@ Stay on this screen until it finishes.</string>
     <string name="ig_timestamp_format_invalid">Not a valid format</string>
     <string name="ig_dialog_misc_hide_share_create_group">Hide \"Create group\" on Share Sheet</string>
     <string name="ig_dialog_misc_show_feature_toasts">Show Feature Toasts</string>
+    <string name="ig_stop_background_heartbeat">Stop Background Heartbeat</string>
+    <string name="ig_stop_upload_alarm">Stop Analytics Upload Alarm</string>
+    <string name="ig_stop_background_prefetch">Stop Background Prefetch</string>
     <string name="ig_dialog_misc_show_follower_toast">Show Follower Toast</string>
     <string name="ig_dialog_misc_view_story_mentions">View Story Mentions</string>
     <string name="ig_dialog_misc_disable_discover_people">Disable Discover People</string>
@@ -848,7 +917,40 @@ Stay on this screen until it finishes.</string>
     <string name="ig_call_confirm_audio">Start an audio call?</string>
     <string name="ig_call_confirm_video">Start a video call?</string>
     <string name="ig_call_confirm_call">Call</string>
+    <string name="ig_call_block_title">Block Incoming Calls</string>
+    <string name="ig_call_block_note">Choose who can ring your phone with an Instagram call. A blocked call just goes unanswered for the caller — nothing is sent to Instagram.</string>
+    <string name="ig_call_block_mode">Who can call you</string>
+    <string name="ig_call_block_mode_everyone">Everyone (off)</string>
+    <string name="ig_call_block_mode_nobody">Nobody</string>
+    <string name="ig_call_block_mode_only">Only people on the list</string>
+    <string name="ig_call_block_mode_except">Everyone except the list</string>
+    <string name="ig_call_block_accounts">Accounts (one per line)</string>
+    <string name="ig_call_block_accounts_hint">Caller name or user id, one per line</string>
+    <string name="ie_call_block_chat">Block calls from this chat</string>
+    <string name="ie_call_unblock_chat">Unblock calls from this chat</string>
+    <string name="ie_call_block_chat_on">Calls from this chat blocked</string>
+    <string name="ie_call_block_chat_off">Calls from this chat unblocked</string>
     <string name="ig_confirm_refresh">Ask Before Refreshing the Feed</string>
     <string name="ig_confirm_refresh_question">Refresh the feed?</string>
     <string name="ig_confirm_refresh_action">Refresh</string>
+    <!-- #299: trust an Instagram that isn't signed by Instagram -->
+    <string name="home_signer_untrusted">Not signed by Instagram · Tap to trust</string>
+    <string name="home_signer_trusted">Trusted by you</string>
+    <string name="home_signer_trust_title">Trust this Instagram?</string>
+    <string name="home_signer_trust_message">This Instagram isn\'t signed by Instagram, so it may be modified. InstaEclipse blocks downloads and settings sync with it until you trust it.\n\nTrust it only if you installed it yourself. Only this signing key (%1$s…) is trusted; a differently signed Instagram is blocked again.</string>
+    <string name="home_signer_trust">Trust</string>
+    <string name="home_signer_untrust_title">Stop trusting this Instagram?</string>
+    <string name="home_signer_untrust_message">Downloads and settings sync with this Instagram (key %1$s…) will be blocked again.</string>
+    <string name="home_signer_untrust">Stop trusting</string>
+    <string name="ie_unsent_label">Unsent</string>
+    <string name="ie_hide_unsent_label">Hide the Unsent label on kept messages</string>
+    <string name="ig_voice_messages">Voice messages</string>
+    <string name="ig_dialog_voice_messages_list">Voice Messages in Chat Details</string>
+    <string name="ig_voice_messages_loaded">Only messages loaded in the chat are listed. Scroll up in the chat to load older ones.</string>
+    <string name="ig_voice_messages_empty">No voice messages in the loaded part of this chat.</string>
+    <string name="ig_voice_messages_no_chat">Open this chat first, then try again.</string>
+    <string name="ig_voice_play_failed">Couldn\'t play this voice message</string>
+    <string name="ig_voice_you">You</string>
+    <string name="ig_glass_tab_bar_section">Navigation bar</string>
+    <string name="ig_glass_tab_bar">Glass navigation bar (restart Instagram)</string>
 </resources>

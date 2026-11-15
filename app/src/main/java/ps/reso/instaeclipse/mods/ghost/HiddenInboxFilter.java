@@ -140,9 +140,9 @@ final class HiddenInboxFilter {
             if (account != null) inboxStores.put(account, new WeakReference<>(inbox));
         } catch (Throwable ignored) {}
     }
-    /** Requests only local observer rebuilds. true means scheduled; hook telemetry confirms execution.
-     * The installed method posts/coalesces an in-process Runnable per inbox folder, rebuilds through
-     * the filtered store, and publishes the list. It does not fetch, delete, or move server threads. */
+    /** Local observer rebuilds only; true = scheduled (hook telemetry confirms execution). Posts a
+     * coalesced in-process Runnable per inbox folder through the filtered store; no server
+     * fetch/delete/move. */
     public static boolean refreshAccount(String account) {
         Method method = refreshMethod;
         WeakReference<Object> reference = account == null ? null : inboxStores.get(account);

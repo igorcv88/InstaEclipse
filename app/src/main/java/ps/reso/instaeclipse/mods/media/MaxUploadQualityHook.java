@@ -17,17 +17,10 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 /**
  * Force "Upload at highest quality" always on.
  *
- * Instagram gates full-quality photo/video upload behind a user switch in
- * Settings → Data usage and media quality → "Upload at highest quality", stored as the int
- * preference "high_quality_media_upload" (1 = on). A single stable helper reads it:
- *
- *     static boolean A00(session) { return prefs.getInt("high_quality_media_upload", 0) == 1; }
- *
- * Every upload path consults that helper, so forcing its boolean result to true makes Instagram
- * behave exactly as if the user had enabled the switch — no transcode internals touched, the
- * app's own highest-quality code path does the work. The helper is matched by the literal
- * preference string plus its (one-arg → boolean) shape, never an obfuscated class name, so it
- * survives version bumps as long as the preference key is unchanged.
+ * All upload paths gate on one helper reading the int pref "high_quality_media_upload" (1 = on).
+ * Forcing its boolean result true is equivalent to the user enabling the switch, so IG's own
+ * highest-quality path runs with no transcode changes. Matched by the pref string + (1-arg →
+ * boolean) shape, not an obfuscated name, so it survives version bumps while the key is unchanged.
  */
 public class MaxUploadQualityHook {
 

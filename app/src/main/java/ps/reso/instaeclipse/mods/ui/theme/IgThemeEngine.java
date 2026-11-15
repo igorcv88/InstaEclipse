@@ -20,6 +20,9 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 public final class IgThemeEngine {
 
     private static volatile IgThemePalette activePalette;
+    // Accent-only recolor (themeAccentOnly, no full theme): a synthetic palette whose accent-family
+    // slots carry the chosen accent and whose other slots are unused. See isAccentOnlyMode().
+    private static volatile IgThemePalette accentOnlyPalette;
     private static volatile SparseIntArray attrToSlot;
     private static volatile SparseIntArray colorResToSlot;
     private static volatile ClassLoader hostClassLoader;
@@ -53,8 +56,25 @@ public final class IgThemeEngine {
      * illegible — #251).
      */
     public static boolean themeEnabled() {
-        if (!FeatureFlags.customThemeEnabled) return false;
-        return FeatureFlags.themeLightPresetId != -1 || isNightNow();
+        if (FeatureFlags.customThemeEnabled) {
+            return FeatureFlags.themeLightPresetId != -1 || isNightNow();
+        }
+        // No full theme, but the accent-only recolor can still run (in both light and dark mode).
+        return FeatureFlags.themeAccentOnly;
+    }
+
+    /**
+     * Accent-only recolor is active: the custom theme is off but "Recolor accent only" is on. In
+     * this mode the engine only swaps Instagram's blue accent and leaves every other color stock
+     * (no background/text remap, no fuzzy classification, no window-color repaint).
+     */
+    public static boolean isAccentOnlyMode() {
+        return !FeatureFlags.customThemeEnabled && FeatureFlags.themeAccentOnly;
+    }
+
+    /** Palette slots that carry the accent color (accent / button / link). */
+    static boolean isAccentSlot(int slotIndex) {
+        return slotIndex == 4 || slotIndex == 5 || slotIndex == 12;
     }
 
     /** Dark mode as Instagram sees it: the foreground activity's configuration (IG's own in-app
@@ -78,6 +98,16 @@ public final class IgThemeEngine {
     }
 
     public static IgThemePalette getActivePalette() {
+        if (isAccentOnlyMode()) {
+            IgThemePalette p = accentOnlyPalette;
+            if (p == null) {
+                synchronized (IgThemeEngine.class) {
+                    if (accentOnlyPalette == null) accentOnlyPalette = buildAccentOnlyPalette();
+                    p = accentOnlyPalette;
+                }
+            }
+            return p;
+        }
         if (FeatureFlags.themeLightPresetId > 0) {
             // A different preset is used in light mode: re-resolve when the mode flips.
             int night = isNightNow() ? 1 : 0;
@@ -87,7 +117,7 @@ public final class IgThemeEngine {
                         boolean flipped = paletteNight != -1;
                         activePalette = night == 1
                                 ? resolvePalette()
-                                : ThemePresets.getById(FeatureFlags.themeLightPresetId).palette.copy();
+                                : ThemeExtras.applyLayers(ThemePresets.getById(FeatureFlags.themeLightPresetId).palette.copy());
                         paletteNight = night;
                         if (flipped) IgColorRemapEngine.invalidate();
                     }
@@ -105,10 +135,12 @@ public final class IgThemeEngine {
 
     public static void invalidate() {
         activePalette = null;
+        accentOnlyPalette = null;
         paletteNight = -1;
         initialized = false;
         attrToSlot = null;
         colorResToSlot = null;
+        ThemeExtras.invalidate();
         IgColorRemapEngine.invalidate();
     }
 
@@ -117,7 +149,19 @@ public final class IgThemeEngine {
     }
 
     public static IgThemePalette resolvePalette() {
-        return ThemeSettingsHelper.resolveEffectivePalette();
+        // The customizer reads ThemeSettingsHelper.resolveEffectivePalette() directly for editing, so
+        // the extras layers are applied HERE (the render path) only — never to the saved palette.
+        return ThemeExtras.applyLayers(ThemeSettingsHelper.resolveEffectivePalette());
+    }
+
+    /** Synthetic palette for accent-only mode: accent / button / link carry the chosen accent. */
+    private static IgThemePalette buildAccentOnlyPalette() {
+        int accent = ThemeExtras.accentColor();
+        IgThemePalette p = new IgThemePalette();
+        p.accent = accent;
+        p.button = accent;
+        p.link = accent;
+        return p;
     }
 
     public static void ensureInitialized(Context context) {
@@ -148,6 +192,7 @@ public final class IgThemeEngine {
         if (map == null) return null;
         int slotIndex = map.get(attrId, -1);
         if (slotIndex < 0) return null;
+        if (isAccentOnlyMode() && !isAccentSlot(slotIndex)) return null;
         return getActivePalette().get(IgThemePalette.SLOT_KEYS[slotIndex]);
     }
 
@@ -157,6 +202,7 @@ public final class IgThemeEngine {
         if (map == null) return null;
         int slotIndex = map.get(resId, -1);
         if (slotIndex < 0) return null;
+        if (isAccentOnlyMode() && !isAccentSlot(slotIndex)) return null;
         Integer fix = IgColorRemapEngine.polarityFix(resId);
         if (fix != null) return fix;
         return getActivePalette().get(IgThemePalette.SLOT_KEYS[slotIndex]);

@@ -32,7 +32,7 @@ final class DownloadDiagnostics {
         String result = "phase=" + phase.name() + " cause=" + cause(error);
         if (error instanceof CoverageFailure) {
             CoverageFailure coverage = (CoverageFailure) error;
-            // Primitive values have bounded decimal representations, even at their type limits.
+            // primitives have bounded decimal length, even at type limits.
             result += " track=" + (coverage.video ? "VIDEO" : "AUDIO")
                     + " durationUs=" + coverage.durationUs + " minPtsUs=" + coverage.minPtsUs
                     + " maxPtsUs=" + coverage.maxPtsUs + " samples=" + coverage.sampleCount
@@ -69,8 +69,8 @@ final class DownloadDiagnostics {
         if (error instanceof CoverageFailure) return "SAMPLE_COVERAGE";
         if (!(error instanceof IOException)) return "PLATFORM_RUNTIME";
         String message = error.getMessage();
-        // Platform errors can contain signed addresses or paths. Only exact owned messages are
-        // classified; bounded template matches below also return constants, never captured text.
+        // Platform messages may carry addresses or paths. Only exact owned messages are classified;
+        // the bounded template matches below also return constants, never captured text.
         if (message == null || message.length() > 256) return "PLATFORM_IO";
         switch (message) {
             case "Encrypted media": return "ENCRYPTED_TRACK";

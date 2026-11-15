@@ -36,9 +36,8 @@ public class BuildExpiredPopupHook {
             }
         };
 
-        // Secondary defence: hook the snooze-expired boolean check.
-        // Returns false so even if the show method is not found, the snooze
-        // check keeps reporting "not expired".
+        // Secondary: snooze-expired boolean check, forced false so it keeps
+        // reporting "not expired" if the show method isn't found.
         XC_MethodHook falseHook = new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);

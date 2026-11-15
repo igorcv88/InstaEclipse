@@ -61,15 +61,15 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 /**
  * Export a DM chat to an HTML file (#225): header button in the open chat.
  *
- * - Thread message store = class using "getUnseenMessageCount directMessage is null" (X.01eV on
- *   452, X.04r2 on 451); instances are remembered from its constructor. Its synchronized
- *   (boolean) -> ArrayList method returns the loaded messages (confirmed + pending, sorted).
- * - Each message is serialized with IG's own JSON serializer (static void (generator, message)
- *   method using "timestamp_in_micro" + "client_context") into a StringWriter-backed generator
- *   from the factory's (Writer) -> generator method, then read as JSON: text, user_id, timestamp,
- *   item_type. No obfuscated field names.
+ * - Message store = class using "getUnseenMessageCount directMessage is null" (X.01eV on 452,
+ *   X.04r2 on 451); instances remembered from its ctor. Its synchronized (boolean) -> ArrayList
+ *   returns the loaded messages (confirmed + pending, sorted).
+ * - Each message serialized with IG's own JSON serializer (static void (generator, message) using
+ *   "timestamp_in_micro" + "client_context") into a StringWriter-backed generator from the factory's
+ *   (Writer) -> generator method, then read as JSON: text, user_id, timestamp, item_type. No
+ *   obfuscated field names.
  * - Sender names: Users reachable from the store (participants) by id → username.
- * Only messages already loaded are exported — use Jump to first message first for a full chat.
+ * Only already-loaded messages are exported — Jump to first message first for a full chat.
  */
 public class ChatExportHook {
 
@@ -78,10 +78,13 @@ public class ChatExportHook {
     private static final String USER = "com.instagram.user.model.User";
     private static final String SESSION = "com.instagram.common.session.UserSession";
     /** the viewer's user id, found next to the participants (set by {@link #participants}) */
-    private static volatile String selfId;
+    static volatile String selfId;
     private static final Map<Object, Boolean> STORES = Collections.synchronizedMap(new WeakHashMap<>());
     private static Method messagesMethod, serializer, factoryWriterMethod;
     private static Class<?> factoryClass;
+    /** true when {@link #messagesMethod} is the 455+ static (store)->List helper rather than the
+     *  legacy instance (boolean)->ArrayList accessor; controls how it is invoked. */
+    private static boolean messagesStatic;
 
     public void install(DexKitBridge bridge, ClassLoader cl) {
         try {
@@ -92,9 +95,24 @@ public class ChatExportHook {
                 break;
             }
             if (store == null) { ModuleLog.line(TAG + "❌ message store not found"); return; }
+            // 452 and earlier: the thread store exposes a (boolean sort) -> ArrayList accessor that
+            // returns the loaded messages (confirmed + pending, optionally sorted). Preferred path.
             for (Method m : ps.reso.instaeclipse.utils.core.SafeReflect.methods(store)) {
                 Class<?>[] p = m.getParameterTypes();
-                if (p.length == 1 && p[0] == boolean.class && m.getReturnType() == java.util.ArrayList.class) messagesMethod = m;
+                if (p.length == 1 && p[0] == boolean.class && m.getReturnType() == java.util.ArrayList.class) { messagesMethod = m; messagesStatic = false; }
+            }
+            // 455+: that (boolean)->ArrayList accessor was inlined away (its body now lives inside
+            // the store's internal "rebuild sorted message list" method), so nothing matches above
+            // and messages=false. Fall back to the store's static get-messages helper: a static
+            // (store) -> List that returns the thread's confirmed messages. Resolved by shape only
+            // (static, declared on the store, one param of the store type, returns List) — this is
+            // unique on both 452 (X.04Km#A06) and 455 (X.02Sp#A06), never anchored on an obf name.
+            if (messagesMethod == null) {
+                for (Method m : ps.reso.instaeclipse.utils.core.SafeReflect.methods(store)) {
+                    if (!Modifier.isStatic(m.getModifiers()) || m.getDeclaringClass() != store) continue;
+                    Class<?>[] p = m.getParameterTypes();
+                    if (p.length == 1 && p[0] == store && m.getReturnType() == List.class) { messagesMethod = m; messagesStatic = true; break; }
+                }
             }
             for (Constructor<?> c : ps.reso.instaeclipse.utils.core.SafeReflect.constructors(store)) {
                 XposedBridge.hookMethod(c, new XC_MethodHook() {
@@ -128,6 +146,14 @@ public class ChatExportHook {
         } catch (Throwable t) {
             ModuleLog.line(TAG + "❌ " + t);
         }
+    }
+
+    /** Invokes the resolved messages accessor regardless of which build it came from: the legacy
+     *  instance {@code (boolean)->ArrayList} on 452, or the 455+ static {@code (store)->List}
+     *  fallback. Returns the thread's loaded messages, or null. */
+    private static List<?> invokeMessages(Object store) throws Exception {
+        Object r = messagesStatic ? messagesMethod.invoke(null, store) : messagesMethod.invoke(store, true);
+        return (List<?>) r;
     }
 
     /** Adds "Export chat" to the module's thread header menu. */
@@ -170,7 +196,7 @@ public class ChatExportHook {
         ps.reso.instaeclipse.utils.toast.IeToast.makeText(a, I18n.t(a, R.string.ig_chat_export_working), Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             try {
-                List<?> msgs = (List<?>) messagesMethod.invoke(store, true);
+                List<?> msgs = invokeMessages(store);
                 Map<String, String> names = participants(store);
                 String title = threadId != null ? ThreadNames.resolve(threadId) : null;
                 if (title == null || title.isEmpty()) title = "chat";
@@ -192,9 +218,9 @@ public class ChatExportHook {
                 String folder = "chat_" + safe + "_" + stamp;   // the export's own folder
                 String file = folder + ".html";
 
-                // media manifest (no in-process download — Instagram's process can't write to the
-                // user's SAF folder, so the companion service fetches + saves these): row index ->
-                // {name, kind}, plus parallel url/name/mime lists handed to the service.
+                // media manifest: row index -> {name, kind}, plus parallel url/name/mime lists for
+                // the companion service (IG's process can't write the user's SAF folder, so it
+                // fetches + saves these).
                 Map<Integer, String[]> media = new HashMap<>();
                 List<String> mUrls = new ArrayList<>(), mNames = new ArrayList<>(), mMimes = new ArrayList<>();
                 if (withMedia) {
@@ -253,10 +279,10 @@ public class ChatExportHook {
                         .append(ps.reso.instaeclipse.utils.core.ExportBrand.htmlFooter()).append("</div></body></html>");
 
                 final int count = n;
-                // Preferred path: hand the HTML + media list to the companion app's DownloadSaveService,
-                // which owns the user's SAF folder (Instagram's own process can't write there, so a
-                // local write would land in Download/ and be hidden from file managers). The service
-                // writes everything into <SAF folder>/chats/<folder>/ and shows its own notification.
+                // Preferred path: hand the HTML + media list to the companion DownloadSaveService,
+                // which owns the SAF folder (IG's process can't write there; a local write lands in
+                // Download/, hidden from file managers). It writes into <SAF folder>/chats/<folder>/
+                // and shows its own notification.
                 String saf = FeatureFlags.downloaderCustomUri;
                 boolean delegated = false;
                 if (saf != null && !saf.isEmpty()) {
@@ -288,8 +314,8 @@ public class ChatExportHook {
                 }
 
                 if (!delegated) {
-                    // No SAF folder set: write in-process via MediaStore (lands in Download/… and is
-                    // only reachable via the gallery or a PC, but at least the data is saved).
+                    // No SAF folder set: write in-process via MediaStore (lands in Download/…,
+                    // reachable only via the gallery or a PC, but saved).
                     int saved = 0;
                     for (int i = 0; i < mUrls.size(); i++) {
                         File tmp = null;
@@ -646,7 +672,7 @@ public class ChatExportHook {
             + ".e{font-size:12px;opacity:.78;margin-top:4px;border-left:2px solid var(--line);padding-left:8px}.row.me .e{border-left-color:rgba(255,255,255,.5)}"
             + ".like{font-size:30px;line-height:1.1}";
 
-    private static long timestampMs(JSONObject j) {
+    static long timestampMs(JSONObject j) {
         try { return Long.parseLong(j.optString("timestamp", "0")) / 1000L; } catch (Throwable t) { return 0; }
     }
 
@@ -838,7 +864,7 @@ public class ChatExportHook {
             }
     }
 
-    private static JSONObject toJson(Object message) {
+    static JSONObject toJson(Object message) {
         try {
             if (!serializer.getParameterTypes()[1].isInstance(message)) return null;
             StringWriter sw = new StringWriter();
@@ -852,9 +878,27 @@ public class ChatExportHook {
         }
     }
 
+    /** The store's loaded messages as IG's own JSON (oldest first), or null when the store or the
+     *  serializer was not found on this build. Used by the voice messages list. */
+    static List<JSONObject> loadedMessages(Object store) {
+        if (store == null || messagesMethod == null || serializer == null || factoryClass == null) return null;
+        try {
+            List<?> msgs = invokeMessages(store);
+            List<JSONObject> out = new ArrayList<>();
+            if (msgs != null) for (Object m : msgs) {
+                JSONObject j = toJson(m);
+                if (j != null) out.add(j);
+            }
+            return out;
+        } catch (Throwable t) {
+            ModuleLog.line(TAG + "⚠️ loaded messages: " + t);
+            return null;
+        }
+    }
+
     /** The live store for exactly this thread (its graph holds the thread id). Never guesses: stores of
      *  other chats (inbox prefetch) stay alive too, so without a confirmed match nothing is exported. */
-    private static Object findStore(String threadId) {
+    static Object findStore(String threadId) {
         if (threadId == null) return null;
         Object[] all;
         synchronized (STORES) { all = STORES.keySet().toArray(); }
@@ -903,7 +947,7 @@ public class ChatExportHook {
     }
 
     /** user id → username for every User reachable from the store (also finds {@link #selfId}). */
-    private static Map<String, String> participants(Object store) {
+    static Map<String, String> participants(Object store) {
         Map<String, String> out = new HashMap<>();
         selfId = null;
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());

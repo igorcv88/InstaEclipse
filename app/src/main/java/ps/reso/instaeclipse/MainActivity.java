@@ -24,7 +24,7 @@ public class MainActivity extends AppCompatActivity {
     @SuppressLint("NonConstantResourceId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // NOTE: intentionally NOT applying DynamicColors — 0.7 ships a fixed branded dark palette
+        // intentionally NOT applying DynamicColors — 0.7 ships a fixed branded dark palette
         // (see Theme.InstaEclipse); adopting the wallpaper palette here would override the brand.
         super.onCreate(savedInstanceState);
         Logging.init(this, "instaeclipse_companion.log");

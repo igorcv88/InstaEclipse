@@ -18,14 +18,14 @@ import ps.reso.instaeclipse.utils.i18n.I18n;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Ask before calling (#277): a tap on a chat's audio or video call button asks first, and the
- * call starts only after "Call".
+ * Ask before calling (#277): tapping a chat's audio/video call button asks first; the call starts
+ * only after "Call".
  *
- * <p>The buttons are the children of the thread header's header_right_buttons. They have no view
- * ids or fixed texts, but each one's click listener holds the button's model, whose type is an enum
- * with readable constant names (AUDIO_CALL, VIDEO_CALL, BLEND_ADD); that is what is matched, so it
- * works in every language. A tap on a call button is held in View.performClick; "Call" replays it,
- * so Instagram's own call code runs unchanged. Each button is looked at once (cached in a tag).
+ * <p>Call buttons are children of the thread header's header_right_buttons, with no view ids or
+ * fixed texts. Each one's click listener holds the button model, whose type is an enum with readable
+ * constants (AUDIO_CALL, VIDEO_CALL, BLEND_ADD) — matched by name, so language-independent. The tap
+ * is held in View.performClick; "Call" replays it, so Instagram's own call code runs unchanged.
+ * Each button is inspected once (cached in a tag).
  */
 public final class CallConfirmHook {
 
@@ -112,8 +112,8 @@ public final class CallConfirmHook {
     }
 
     private static void ask(View button, boolean video) {
-        // The chat runs in its own activity (ModalActivity): show the dialog on the one that
-        // holds the button, not on the main activity behind it.
+        // chat runs in its own activity (ModalActivity): show the dialog there, not on the
+        // main activity behind it.
         Context ctx = button.getContext();
         for (Context c = ctx; c instanceof android.content.ContextWrapper w; c = w.getBaseContext()) {
             if (c instanceof Activity) { ctx = c; break; }

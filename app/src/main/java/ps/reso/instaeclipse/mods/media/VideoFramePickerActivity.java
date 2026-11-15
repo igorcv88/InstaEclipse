@@ -41,7 +41,7 @@ public final class VideoFramePickerActivity extends AppCompatActivity {
     private final DownloadEngine.Cancellation cancellation = new DownloadEngine.Cancellation();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicInteger generation = new AtomicInteger();
-    // The following three resources are accessed only by the serial worker.
+    // These three resources are accessed only by the serial worker.
     private FrameSessionCache.Session session;
     private DownloadEngine.Result downloaded;
     private VideoFrameExtractor extractor;

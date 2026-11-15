@@ -32,9 +32,10 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
  * (next to Threads / Options) that opens Instagram's own Saved screen.
  *
  * Opening Saved reuses exactly what instagram://saved does: SavedUrlHandlerActivity (class name
- * kept by R8) builds the Saved fragment with a static (session, String, boolean, boolean) factory
- * and shows it with a static (Fragment, FragmentActivity, session) navigator; both are taken from
- * that method's invokes. The own profile is the one whose action bar has the create (+) button.
+ * kept by R8) builds the Saved fragment with a static (session, String, boolean, boolean[, boolean])
+ * factory (455 appended a trailing boolean) and shows it with a static (Fragment, FragmentActivity,
+ * session) navigator or a make/push/commit navigator pulled from that handler method's invokes. The
+ * own profile is the one whose action bar has the create (+) button.
  */
 public class SavedOnProfileHook {
     private static final String TAG = "(IE|SavedProfile) ";
@@ -70,7 +71,12 @@ public class SavedOnProfileHook {
                     }
                     if (p.length == 2 && Activity.class.isAssignableFrom(p[0]) && m.getReturnType() != void.class
                             && !m.getReturnType().isPrimitive()) { navMake = m; continue; }
-                    if (p.length == 4 && p[1] == String.class && p[2] == boolean.class && p[3] == boolean.class
+                    // 455+: the Saved-fragment factory gained a trailing boolean, so the shape is
+                    // (session, String, boolean, boolean[, boolean]) -> Fragment. Accept 4 or 5
+                    // params as long as p[1] is the collection String and the tail is all booleans.
+                    if ((p.length == 4 || p.length == 5) && p[1] == String.class
+                            && p[2] == boolean.class && p[3] == boolean.class
+                            && (p.length == 4 || p[4] == boolean.class)
                             && fragment.isAssignableFrom(m.getReturnType())) factory = m;
                     else if (p.length == 3 && p[0] == fragment && Activity.class.isAssignableFrom(p[1])
                             && m.getReturnType() == void.class) {
@@ -195,7 +201,13 @@ public class SavedOnProfileHook {
                 ModuleLog.line(TAG + "⚠️ session=" + session + " activity=" + act);
                 return;
             }
-            Object saved = factory.invoke(null, session, null, false, false);
+            // (session, collectionId=null, then all-false booleans); the factory grew a trailing
+            // boolean on 455, so size the argument list to the resolved method rather than hardcode it.
+            Class<?>[] fp = factory.getParameterTypes();
+            Object[] args = new Object[fp.length];
+            args[0] = session;
+            for (int i = 2; i < fp.length; i++) args[i] = Boolean.FALSE;
+            Object saved = factory.invoke(null, args);
             if (navMake != null) {
                 Object nav = navMake.invoke(null, act, session);
                 navPush.invoke(nav, null, saved);

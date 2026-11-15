@@ -35,7 +35,7 @@ public class HelpFragment extends Fragment {
 
     private static final String VECTOR_URL = "https://github.com/JingMatrix/Vector/releases/latest";
     private static final String LSPATCH_URL = "https://github.com/JingMatrix/LSPatch/releases/latest";
-    private static final String LSPATCH_GUIDE_URL = "https://t.me/instaEclipse_discussion/158/5149";
+    private static final String LSPATCH_GUIDE_URL = "https://t.me/EclipseMods_Discussion";
 
     private static final int[] FAQ_STRINGS = {
             R.string.faq_1, R.string.faq_2, R.string.faq_3,
@@ -55,6 +55,10 @@ public class HelpFragment extends Fragment {
         view.findViewById(R.id.vector_row).setOnClickListener(v -> openUrl(VECTOR_URL));
         view.findViewById(R.id.lspatch_row).setOnClickListener(v -> openUrl(LSPATCH_URL));
         view.findViewById(R.id.lspatch_guide_button).setOnClickListener(v -> openUrl(LSPATCH_GUIDE_URL));
+        view.findViewById(R.id.patch_instagram_button).setOnClickListener(v ->
+                startActivity(new Intent(requireContext(), ps.reso.instaeclipse.patcher.PatchInstagramActivity.class)));
+        view.findViewById(R.id.fix_links_button).setOnClickListener(v ->
+                ps.reso.instaeclipse.patcher.AppLinkFixer.fix(requireActivity()));
         for (int id : new int[]{R.id.vector_logo, R.id.lspatch_logo}) {
             View logo = view.findViewById(id);
             logo.setOutlineProvider(new android.view.ViewOutlineProvider() {

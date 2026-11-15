@@ -39,14 +39,12 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 public class StoryMentionHook {
 
-    // Story @mentions live behind a two-step pipeline, not a single Media-level getter:
+    // Story @mentions go through a two-step pipeline, not a single Media-level getter:
     //   Media -> LiveTreeMediaDict (found by type) -> "reel_mentions" field (raw tree entries)
     //   -> a converter method that turns each raw entry into an Interactive sticker object,
-    //      with the actual mentioned User stored in one of Interactive's own fields.
-    // Anchoring on the "reel_mentions" JSON key and the converter's own debug string is far
-    // more stable across IG versions than matching a Media-level method's signature — those
-    // getters get refactored/renamed/re-typed constantly (see git history of this file), but
-    // literal JSON field names and hardcoded log/QPL strings don't change on a version bump.
+    //      with the mentioned User in one of Interactive's own fields.
+    // Anchor on the "reel_mentions" JSON key and the converter's debug string: method
+    // signatures get renamed on version bumps, literal JSON keys and log strings don't.
     private static volatile Method rawMentionsGetter;   // LiveTreeMediaDict -> List (raw entries)
     private static volatile Method mentionsConverter;   // List(raw) -> List<Interactive w/ User field>
 
@@ -115,19 +113,48 @@ public class StoryMentionHook {
         }
 
         try {
-            List<MethodData> converters = DexKitQueryCache.findMethod(bridge, FindMethod.create()
-                    .matcher(MethodMatcher.create()
-                            .paramCount(1)
-                            .usingEqStrings(List.of("MentionTappableObject.user is null; dropping mention sticker"))));
-            for (MethodData md : converters) {
+            // The converter is the static List(raw)->List(Interactive-with-User) method that
+            // walks each raw reel_mentions entry, drops entries whose user is null, and builds
+            // a com.instagram.reels.interactive.Interactive per surviving entry.
+            //
+            // It used to be uniquely identified by the "MentionTappableObject.user is null;
+            // dropping mention sticker" log string, but IG 455 hoisted that null-user log call
+            // out of the converter and into a merged Kotlin Function1 dispatch lambda
+            // (invoke(Object)Object), so on 455 that string no longer lives in the converter and
+            // the old anchor resolves nothing (-> "mentionsConverter not found").
+            //
+            // The code-path label "StoryTappableObjectExt.mentionStickerstoReelInteractives" is
+            // still emitted from inside the converter itself on both 452 and 455 (one method, one
+            // class, whole-APK-unique on both builds), so anchor on it first and keep the legacy
+            // string as a fallback for older builds. Both resolve to the same method on 452, so
+            // the query stays backward-compatible. Filter to a static method returning List so a
+            // same-string non-converter (e.g. the dispatch lambda) can never be picked.
+            String[] converterAnchors = {
+                    "StoryTappableObjectExt.mentionStickerstoReelInteractives", // 452 & 455 (converter body)
+                    "MentionTappableObject.user is null; dropping mention sticker" // <=452 legacy fallback
+            };
+            for (String anchor : converterAnchors) {
+                List<MethodData> converters;
                 try {
-                    Method m = md.getMethodInstance(classLoader);
-                    if (!List.class.isAssignableFrom(m.getReturnType())) continue;
-                    m.setAccessible(true);
-                    mentionsConverter = m;
-                    DexKitCache.saveMethod("MentionsConverter", m);
-                    break;
-                } catch (Throwable ignored) {}
+                    converters = DexKitQueryCache.findMethod(bridge, FindMethod.create()
+                            .matcher(MethodMatcher.create()
+                                    .paramCount(1)
+                                    .usingEqStrings(List.of(anchor))));
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                for (MethodData md : converters) {
+                    try {
+                        Method m = md.getMethodInstance(classLoader);
+                        if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+                        if (!List.class.isAssignableFrom(m.getReturnType())) continue;
+                        m.setAccessible(true);
+                        mentionsConverter = m;
+                        DexKitCache.saveMethod("MentionsConverter", m);
+                        break;
+                    } catch (Throwable ignored) {}
+                }
+                if (mentionsConverter != null) break;
             }
             if (mentionsConverter == null) ModuleLog.line("(IE|Mention) ❌ mentionsConverter not found");
         } catch (Throwable t) {
@@ -218,8 +245,8 @@ public class StoryMentionHook {
 
     // ── Hook 2: handle "View Mentions" tap ───────────────────────────────────
     //
-    // Same anchor as StoryDownloadHook click handler. We intercept only our label;
-    // all other taps pass through to Instagram and to the StoryDownloadHook.
+    // Same anchor as StoryDownloadHook click handler. Intercepts only our label;
+    // other taps pass through to Instagram and StoryDownloadHook.
 
     private void installClickHook(DexKitBridge bridge, ClassLoader classLoader) {
         List<Method> dispatchers = ps.reso.instaeclipse.mods.media.StoryDownloadHook.storyClickDispatchers(bridge, classLoader);

@@ -18,10 +18,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Minimal, dependency-free async image loader for small circular avatars (e.g. GitHub profile
- * pictures on the Home contributor cards). Decodes off the main thread, caches decoded bitmaps in
- * memory, applies a circular mask, and reveals the target ImageView only on success — so a missing
- * link or a failed fetch simply leaves the monogram fallback showing underneath.
+ * Async circular avatar loader (e.g. GitHub pics on Home contributor cards). Decodes off the main
+ * thread, caches bitmaps, reveals the ImageView only on success so the monogram fallback shows on failure.
  */
 public final class AvatarLoader {
 

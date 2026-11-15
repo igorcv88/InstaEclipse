@@ -45,8 +45,8 @@ import ps.reso.instaeclipse.utils.toast.IeToast;
  *
  * <p>Backup: one zip saved from Instagram's process to Download/InstaEclipse (no size limit).
  * Restore: the companion's picker (DataImportActivity) reads the zip and sends it here in Base64
- * pieces, since one broadcast can't carry more than about a megabyte. Deleted messages are merged
- * with what's on the phone; the other files are put back as they were. Instagram then restarts so
+ * pieces (one broadcast can't carry more than about a megabyte). Deleted messages are merged with
+ * what's on the phone; the other files are put back as they were. Instagram restarts afterwards so
  * every store reloads from disk.
  */
 public final class DataBackup {

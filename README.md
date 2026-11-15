@@ -8,7 +8,8 @@
     <a href="https://github.com/ReSo7200/InstaEclipse/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/ReSo7200/InstaEclipse?style=for-the-badge&logo=github&color=1a1a2e&labelColor=0d0d0d"/></a>
     <a href="https://github.com/ReSo7200/InstaEclipse/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ReSo7200/InstaEclipse?style=for-the-badge&logo=github&color=1a1a2e&labelColor=0d0d0d"/></a>
     <a href="https://github.com/ReSo7200/InstaEclipse/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/ReSo7200/InstaEclipse/total?style=for-the-badge&logo=github&color=1a1a2e&labelColor=0d0d0d"/></a>
-    <a href="https://t.me/InstaEclipse"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-Channel-26A5E4?style=for-the-badge&logo=telegram&labelColor=0d0d0d"/></a>
+    <a href="https://t.me/Eclipse_mods_a"><img alt="Telegram Announcements" src="https://img.shields.io/badge/Telegram-Announcements-26A5E4?style=for-the-badge&logo=telegram&labelColor=0d0d0d"/></a>
+    <a href="https://t.me/EclipseMods_Discussion"><img alt="Telegram Chat" src="https://img.shields.io/badge/Telegram-Chat-26A5E4?style=for-the-badge&logo=telegram&labelColor=0d0d0d"/></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/ReSo7200/InstaEclipse?style=for-the-badge&color=1a1a2e&labelColor=0d0d0d"/></a>
   </p>
 
@@ -328,19 +329,19 @@ All chat tools live in one InstaEclipse button in the chat header, next to the b
 
 | | |
 |---|---|
-| **Tested on** | Instagram `451.0.0.20.80` |
-| **Get this version** | [Instagram 451.0.0.20.80 on APKMirror](https://www.apkmirror.com/apk/instagram/instagram-instagram/instagram-451-0-0-20-80-release/) |
+| **Tested on** | Instagram `455.0.0.8.72` |
+| **Get this version** | [Instagram 455.0.0.8.72 on APKMirror](https://www.apkmirror.com/apk/instagram/instagram-instagram/instagram-455-0-0-8-72-release/) |
 | **Survives updates** | Yes, DexKit finds what it needs at runtime |
 | **Android** | 9 and newer |
 | **Frameworks** | Vector 2.2 or newer (root), LSPatch 1.0 or newer (no root); the Legacy build (`-L`) for LSPosed and other frameworks on the classic API |
 
-A big Instagram update can still knock a feature out until it is patched. The menu inside Instagram shows how many features are active (for example "62/62 active"); tap it to see which ones could not attach. If something breaks right after an update, check the [Telegram channel](https://t.me/InstaEclipse) first.
+A big Instagram update can still knock a feature out until it is patched. The menu inside Instagram shows how many features are active (for example "62/62 active"); tap it to see which ones could not attach. If something breaks right after an update, check the [Telegram channel](https://t.me/Eclipse_mods_a) first.
 
 ---
 
 ## Installation
 
-> Get Instagram [451.0.0.20.80 from APKMirror](https://www.apkmirror.com/apk/instagram/instagram-instagram/instagram-451-0-0-20-80-release/) rather than the Play Store. The Play build is not always fully supported.
+> Get Instagram [455.0.0.8.72 from APKMirror](https://www.apkmirror.com/apk/instagram/instagram-instagram/instagram-455-0-0-8-72-release/) rather than the Play Store. The Play build is not always fully supported.
 
 Download the latest InstaEclipse APK from [**Releases**](https://github.com/ReSo7200/InstaEclipse/releases/latest), then follow the path for your phone. Each release has two builds with the same features:
 
@@ -361,18 +362,32 @@ Download the latest InstaEclipse APK from [**Releases**](https://github.com/ReSo
 > [!CAUTION]
 > Using Hide My Applist? Do not hide InstaEclipse from Instagram. Instagram needs to see it, or the menu text goes missing and features stop working.
 
+### No root, in one tap (built in)
+
+> No extra app needed. InstaEclipse patches Instagram for you and keeps Instagram's original signature. It does not bypass Play Integrity.
+
+1. **Install InstaEclipse** from the APK.
+2. **Open Patch Instagram.** In the InstaEclipse app, go to Help and tap **Patch Instagram (no root)**.
+3. **Pick your Instagram APK(s)** — a base APK, a split set, or an `.apkm` / `.apks` / `.xapk` bundle.
+4. **Patch and install.** Watch the steps, then confirm the install prompt.
+5. **Open the menu.** Long press the Explore (search) tab.
+
+> **Save instead of install.** On the patch screen, **Patch & save APK (no install)** patches Instagram and writes the result out, so you can back it up or install it on another device later. A single APK opens a Save dialog; a split set is written as raw APKs into an `InstaEclipse-patched` folder you choose.
+
+> **Links opening in your browser?** Re-signing breaks Android's link verification, so Instagram links can open externally. After patching, tap **Enable link handling** on the success screen to send them back to the app (via Shizuku if it is running, otherwise it opens the system setting).
+
 ### No root, with LSPatch
 
-> Needs [JingMatrix's LSPatch](https://github.com/JingMatrix/LSPatch/releases/latest) 1.0 or newer.
+> Prefer to patch yourself? Needs [JingMatrix's LSPatch](https://github.com/JingMatrix/LSPatch/releases/latest) 1.0 or newer.
 
 1. **Install InstaEclipse** from the APK.
 2. **Install LSPatch** (the JingMatrix fork).
-3. **Patch Instagram.** In LSPatch, tap **+**, pick the Instagram APK or the installed app, choose **Local Patch Mode**, turn on **Inject loader dex**, then tap **Start Patch**.
+3. **Patch Instagram.** In LSPatch, tap **+**, pick the Instagram APK or the installed app, choose **Local Patch Mode**, turn on **Inject loader dex**, set **Signature bypass** to the level that keeps the original signature, then tap **Start Patch**.
 4. **Install the patched APK** and log in.
 5. **Enable the module.** In LSPatch, open Manage, pick Instagram, open Modules and enable InstaEclipse.
 6. **Open the menu.** Long press the Explore (search) tab.
 
-There is also a [step by step guide](https://t.me/instaEclipse_discussion/158/5149) in the community.
+There is also a [step by step guide](https://t.me/EclipseMods_Discussion) in the community.
 
 ---
 
@@ -386,8 +401,8 @@ There is also a [step by step guide](https://t.me/instaEclipse_discussion/158/51
 
 Updates and tips:
 
-- 📢 Announcements: [Telegram channel](https://t.me/InstaEclipse)
-- 💬 Questions and help: [Telegram group](https://t.me/instaEclipse_discussion)
+- 📢 Announcements: [Telegram channel](https://t.me/Eclipse_mods_a)
+- 💬 Questions and help: [Telegram group](https://t.me/EclipseMods_Discussion)
 
 ---
 
@@ -400,7 +415,7 @@ Disable and enable the module again in Vector or LSPatch, then force stop and re
 Turn off Hide My Applist (HMA) for Instagram. InstaEclipse reads its text from its own app, and HMA hides it.
 
 **Some features will not work even when they are on.**
-Instagram's own config can block them. Open Developer Options and choose Restore Default Config. The same config is also on [Telegram](https://t.me/InstaEclipse/52).
+Instagram's own config can block them. Open Developer Options and choose Restore Default Config. The same config is also on [Telegram](https://t.me/Eclipse_mods_a).
 
 **Developer Options labels show up as numbers.**
 That happens on Instagram's Stable build. Use a Beta or Alpha build from APKMirror.
@@ -409,10 +424,10 @@ That happens on Instagram's Stable build. Use a Beta or Alpha build from APKMirr
 Force stop Instagram and clear its cache, then open it again.
 
 **It does not work on the Play Store version.**
-Install [Instagram 451.0.0.20.80 from APKMirror](https://www.apkmirror.com/apk/instagram/instagram-instagram/instagram-451-0-0-20-80-release/) instead.
+Install [Instagram 455.0.0.8.72 from APKMirror](https://www.apkmirror.com/apk/instagram/instagram-instagram/instagram-455-0-0-8-72-release/) instead.
 
 **Still stuck?**
-Ask in the [Telegram group](https://t.me/instaEclipse_discussion). Someone will help.
+Ask in the [Telegram group](https://t.me/EclipseMods_Discussion). Someone will help.
 
 ---
 

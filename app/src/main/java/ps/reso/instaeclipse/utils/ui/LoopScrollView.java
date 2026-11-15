@@ -5,10 +5,8 @@ import android.util.AttributeSet;
 import android.widget.HorizontalScrollView;
 
 /**
- * A HorizontalScrollView with momentum fling disabled. Used by the Home contributors / special-thanks
- * carousels: they auto-scroll on a continuous loop, and a fling would race the loop driver and make
- * the strip snap back or jump to a random offset on release. Dragging still works — only the
- * post-release momentum is suppressed, so the auto-scroll can resume smoothly from the exact spot.
+ * HorizontalScrollView with fling disabled, for the Home auto-scrolling carousels where fling would
+ * race the loop driver. Dragging still works; only post-release momentum is suppressed.
  */
 public class LoopScrollView extends HorizontalScrollView {
     public LoopScrollView(Context context) { super(context); }

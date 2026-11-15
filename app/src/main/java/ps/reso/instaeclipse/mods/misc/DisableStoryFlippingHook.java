@@ -44,7 +44,7 @@ public class DisableStoryFlippingHook {
 
     private void findAndHookMethod(DexKitBridge bridge) {
         try {
-            // Step 1: the "story item finished → advance" callback on ReelViewerFragment.
+            // story item finished → advance callback on ReelViewerFragment.
             // IG 452+: typed A1L(ReelItem)V holding the "end_scene" check; the (Object)V
             // interface method became a bare bridge to it, and the progress callback also calls
             // it at 100%, so hooking it covers both paths.
@@ -76,7 +76,6 @@ public class DisableStoryFlippingHook {
                 return;
             }
 
-            // Step 2: Hook the correct method
             for (MethodData method : methods) {
                 try {
                     Method targetMethod = method.getMethodInstance(Module.hostClassLoader);

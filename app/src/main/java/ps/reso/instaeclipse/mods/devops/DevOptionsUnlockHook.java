@@ -70,7 +70,7 @@ public class DevOptionsUnlockHook {
 
     private void findAndHookDynamicMethod(DexKitBridge bridge) {
         try {
-            // Tier 1: Existing String-based search
+            // Tier 1: string-based search
             ModuleLog.line("(InstaEclipse | DevOptionsEnable): 🔍 Discovery Tier 1 (String)...");
             List<ClassData> classes = DexKitQueryCache.findClass(bridge, FindClass.create()
                     .matcher(ClassMatcher.create().usingStrings("is_employee"))
@@ -141,7 +141,7 @@ public class DevOptionsUnlockHook {
                 }
             }
 
-            // Final Debug Trace: If all tiers fail, log where the string is used ANYWHERE
+            // All tiers failed: log where the string is used anywhere
             if (!found) {
                 ModuleLog.line("(InstaEclipse | DevOptionsEnable): ❌ Tier 3 failed. Debugging global references...");
                 List<MethodData> debugMethods = DexKitQueryCache.findMethod(bridge, FindMethod.create()

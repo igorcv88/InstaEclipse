@@ -105,8 +105,7 @@ public final class BrokerPayload {
             if (copy.containsKey("lng")) coordinate(copy.get("lng"), 180);
         } else if (FRAME.equals(target)) {
             DownloadRequest original = request(copy.get(FRAME_REQUEST));
-            // This explicit action always uses the best exposed video. Existing video-download
-            // preferences and their request snapshots remain unchanged.
+            // Always uses the best exposed video; existing download prefs and snapshots unchanged.
             copy.put(FRAME_REQUEST, new DownloadRequest(original.mediaId, original.owner,
                     original.filename, original.manifest, original.direct,
                     new DownloadRequest.Options(0, false, false), original.audio).toJson());

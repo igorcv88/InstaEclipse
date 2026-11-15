@@ -6,11 +6,9 @@ import android.content.Context;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Resolves Instagram resource ids by name once per process and caches the result — including
- * "not found" (0) — so hooks on hot paths such as {@code View.onAttachedToWindow} compare ints
- * instead of calling {@code Resources.getIdentifier} (a slow string lookup) on every call.
- *
- * <p>Only valid inside the hooked app, where a process hosts a single Instagram package.
+ * Resolves IG resource ids by name once per process and caches the result (including 0 = not found),
+ * so hot-path hooks compare ints instead of calling {@code Resources.getIdentifier} each time.
+ * Only valid inside the hooked app (one Instagram package per process).
  */
 public final class ResIds {
 

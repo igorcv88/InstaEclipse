@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Switch labels (Profiles menu) -->
+    <string name="ig_dialog_hide_profile_highlights">Hide highlights tray</string>
+    <string name="ig_dialog_hide_profile_song">Hide profile song</string>
+    <string name="ig_dialog_hide_profile_bio_links">Hide bio links row</string>
+    <string name="ig_dialog_hide_profile_interests">Hide interests / category</string>
+    <string name="ig_dialog_hide_profile_banners">Hide profile banners</string>
+
+    <!-- Concise load-toast feature labels -->
+    <string name="ig_feat_hide_profile_highlights">Hide highlights</string>
+    <string name="ig_feat_hide_profile_song">Hide song</string>
+    <string name="ig_feat_hide_profile_bio_links">Hide bio links</string>
+    <string name="ig_feat_hide_profile_interests">Hide interests</string>
+    <string name="ig_feat_hide_profile_banners">Hide banners</string>
+</resources>

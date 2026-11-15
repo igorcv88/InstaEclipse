@@ -14,7 +14,7 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
  *
  * The network interceptor already drops the story/reels metadata requests, but IG 447.0.0.39+ falls
  * back to its locally-cached stories/reels (media streams from the CDN, which distraction-free does
- * not block), so they stay visible. To make them actually disappear we collapse the real Views by
+ * not block), so they stay visible. To make them actually disappear the real Views are collapsed by
  * their stable public resource names (verified from the live view tree, never obfuscated X.* ids):
  *   - story tray  -> com.instagram.android:id/reels_tray_container   (disableStories or hideStoriesTray)
  *   - Reels tab   -> com.instagram.android:id/clips_tab              (gated on disableReels)

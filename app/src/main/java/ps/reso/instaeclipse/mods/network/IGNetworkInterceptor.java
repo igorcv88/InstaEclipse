@@ -23,7 +23,7 @@ public class IGNetworkInterceptor {
      * Neutralise a dropped request by redirecting it to a dead local URL. IG 446+/447.0.0.39+ keeps
      * the request URL in MULTIPLE fields on the request object (e.g. a String copy plus two java.net.URI
      * copies), and the actual dispatch reads one of the copies — not necessarily the single URI field
-     * we resolve for inspection. Rewriting only that one field is silently ignored, so the request
+     * resolved for inspection. Rewriting only that one field is silently ignored, so the request
      * still goes out. Rewrite EVERY url-bearing field: every java.net.URI field, and every String
      * field that currently holds this request's URL (matched by the original value / same path).
      */
@@ -80,9 +80,125 @@ public class IGNetworkInterceptor {
         }
     }
 
+    /** Once-found IDLE constant of IG's PresenceStatus enum (keyed by its enum class). */
+    private static volatile Enum<?> presenceIdle;
+
+    /**
+     * Freeze the "active now" green dot. IG reports presence to Meta's presence service by
+     * constructing {@code com.facebook.presence.model.upi.PresenceWriteRequest} with a
+     * {@code PresenceStatus} (its 3rd arg): ACTIVE while the app is in front, IDLE from the
+     * background. All of these class names are stable (unobfuscated Meta presence model), so no
+     * DexKit is needed. While SpoofLastSeen is on we swap an outgoing ACTIVE for IDLE — the exact
+     * status IG itself sends when backgrounded — so others stop seeing "active now" while the
+     * stream, and the presence of people you chat with that comes back on it, are untouched.
+     */
+    private static void hookActiveStatus(ClassLoader classLoader) {
+        try {
+            Class<?> writeRequest = XposedHelpers.findClassIfExists(
+                    "com.facebook.presence.model.upi.PresenceWriteRequest", classLoader);
+            final Class<?> statusEnum = XposedHelpers.findClassIfExists(
+                    "com.facebook.presence.model.upi.PresenceStatus", classLoader);
+            if (writeRequest == null || statusEnum == null) {
+                ModuleLog.line("(InstaEclipse | Interceptor): ⚠️ active-status: presence classes not found");
+                return;
+            }
+            XC_MethodHook swap = new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    try {
+                        Object[] args = param.args;
+                        // The status is the 3rd parameter of the write-request constructor(s).
+                        if (args.length <= 2 || !statusEnum.isInstance(args[2])) return;
+                        if (!FeatureFlags.spoofLastSeen || !"ACTIVE".equals(((Enum<?>) args[2]).name())) return;
+                        Enum<?> idle = presenceIdleOf(statusEnum);
+                        if (idle != null) args[2] = idle;
+                    } catch (Throwable ignored) {
+                    }
+                }
+
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    // Arg rewrites in a before-hook don't always reach the stored field under
+                    // libxposed/LSPatch, so also set the request's status field to IDLE directly.
+                    try {
+                        if (!FeatureFlags.spoofLastSeen) return;
+                        Object obj = param.thisObject;
+                        if (obj == null) return;
+                        Enum<?> idle = presenceIdleOf(statusEnum);
+                        if (idle == null) return;
+                        for (Field f : obj.getClass().getDeclaredFields()) {
+                            if (f.getType() != statusEnum) continue;
+                            f.setAccessible(true);
+                            Object v = f.get(obj);
+                            if (v instanceof Enum && "ACTIVE".equals(((Enum<?>) v).name())) f.set(obj, idle);
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            };
+            int n = 0;
+            for (java.lang.reflect.Constructor<?> c : writeRequest.getDeclaredConstructors()) {
+                XposedBridge.hookMethod(c, swap);
+                n++;
+            }
+            if (n > 0) FeatureStatusTracker.setHooked("SpoofLastSeen");
+            ModuleLog.line("(InstaEclipse | Interceptor): active-status (presence write) ctor hooks: " + n);
+
+            // The green "active now" dot is driven by the realtime connection's foreground app-state,
+            // not only the presence write. RealtimeClientManager.updateAppStateInternal(boolean) reports
+            // it (true=foreground). Force background while SpoofLastSeen is on so the server never marks
+            // us active now. Name is stable/unobfuscated on 451/452.
+            Class<?> rcm = XposedHelpers.findClassIfExists(
+                    "com.instagram.realtimeclient.RealtimeClientManager", classLoader);
+            if (rcm != null) {
+                XposedHelpers.findAndHookMethod(rcm, "updateAppStateInternal", boolean.class, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            if (FeatureFlags.spoofLastSeen && Boolean.TRUE.equals(param.args[0])) {
+                                param.args[0] = Boolean.FALSE;
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+                ModuleLog.line("(InstaEclipse | Interceptor): hooked updateAppStateInternal");
+            } else {
+                ModuleLog.line("(InstaEclipse | Interceptor): ⚠️ RealtimeClientManager not found");
+            }
+        } catch (Throwable t) {
+            ModuleLog.line("(InstaEclipse | Interceptor): ⚠️ active-status hook: " + t.getMessage());
+        }
+    }
+
+    /** The IDLE constant of IG's PresenceStatus enum, read from its static fields (no values() needed). */
+    private static Enum<?> presenceIdleOf(Class<?> statusEnum) {
+        Enum<?> found = presenceIdle;
+        if (found != null && found.getDeclaringClass() == statusEnum) return found;
+        for (Field f : statusEnum.getDeclaredFields()) {
+            if (f.getType() != statusEnum || !java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+            try {
+                f.setAccessible(true);
+                Object v = f.get(null);
+                if (v instanceof Enum && "IDLE".equals(((Enum<?>) v).name())) {
+                    found = (Enum<?>) v;
+                    presenceIdle = found;
+                    return found;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
     public void handleInterceptor(XC_LoadPackage.LoadPackageParam lpparam) {
         try {
             ClassLoader classLoader = lpparam.classLoader;
+
+            // Freeze "last seen" (the live "active now" green dot). Modern IG reports presence by
+            // constructing a PresenceWriteRequest with an ACTIVE status, not over HTTP, so the URL
+            // drops below can't stop it. Swap outgoing ACTIVE -> IDLE instead. See hookActiveStatus.
+            hookActiveStatus(classLoader);
 
             // Locate the TigonServiceLayer class dynamically
             Class<?> tigonClass = classLoader.loadClass("com.instagram.api.tigon.TigonServiceLayer");
@@ -125,6 +241,8 @@ public class IGNetworkInterceptor {
                                 Object requestObj = param.args[0];
                                 URI uri = (URI) XposedHelpers.getObjectField(requestObj, finalUriFieldName);
 
+                                uri = redirectToCopiedProfile(requestObj, finalUriFieldName, uri);
+
                                 if (uri != null && uri.getPath() != null) {
                                     final String host = uri.getHost(); // null for opaque/relative URIs — guard before use
                                     boolean shouldDrop = false;
@@ -149,6 +267,7 @@ public class IGNetworkInterceptor {
                                     if (FeatureFlags.isGhostViewOnce) {
                                         shouldDrop |= uri.getPath().endsWith("/item_replayed/");
                                         shouldDrop |= (uri.getPath().contains("/direct") && uri.getPath().endsWith("/item_seen/"));
+                                        shouldDrop |= uri.getPath().contains("/visual_threads/") && uri.getPath().endsWith("/seen/");
                                     }
                                     if (FeatureFlags.isGhostStory) {
                                         // Version-agnostic: getPath() excludes the ?reel=... query, so it
@@ -167,6 +286,8 @@ public class IGNetworkInterceptor {
                                                 || p.contains("/ig_meta_ai_side_chat_new_session/")
                                                 || p.contains("/create_ig_meta_ai_side_chat/")
                                                 || p.contains("/genai/response")
+                                                // AI bots offered in the Messages search (IG 452)
+                                                || p.contains("/direct_v2/search_gen_ai_bots/")
                                                 || (uri.getHost() != null && uri.getHost().contains("aistudio.instagram.com"));
                                     }
 
@@ -181,11 +302,8 @@ public class IGNetworkInterceptor {
                                     if (FeatureFlags.disableFeed) {
                                         shouldDrop |= uri.getPath().endsWith("/feed/timeline/");
                                     }
-                                    // Full Disable Reels takes precedence over the except-DM exception:
-                                    // when it is on, every clips endpoint is dropped — including
-                                    // "Allow in DM" (disableReelsExceptDM) is the switch that controls DM
-                                    // reels: when it is ON, DM-opened reels (/api/v1/clips/items/) are
-                                    // allowed and only the reels feed/discover is dropped; when it is OFF,
+                                    // disableReelsExceptDM: when ON, DM-opened reels (/api/v1/clips/items/)
+                                    // are allowed and only the reels feed/discover is dropped; when OFF,
                                     // full Disable Reels drops every clips endpoint including clips/items/.
                                     if (FeatureFlags.disableReels && !FeatureFlags.disableReelsExceptDM) {
                                         shouldDrop |= uri.getPath().endsWith("/qp/batch_fetch/")
@@ -209,6 +327,20 @@ public class IGNetworkInterceptor {
                                                 || uri.getPath().contains("/discover/topical_explore_stream")
                                                 || (host != null && host.contains("i.instagram.com") && uri.getPath().contains("/api/v1/fbsearch/top_serp/"));
                                     }
+                                    // Explore cleanup: hide the Explore grid. The Search tab's grid is the
+                                    // topical_explore fetch (and its stream variant); search, recent searches
+                                    // and search results are other endpoints and stay. Fail-open.
+                                    if (FeatureFlags.hideExploreGrid) {
+                                        shouldDrop |= uri.getPath().contains("/discover/topical_explore");
+                                    }
+                                    // Explore cleanup: hide search suggestions. The "Suggested for you" null
+                                    // state shown when the search bar is tapped before typing comes from
+                                    // nullstate_dynamic_sections / accounts_recs; typed search and recent
+                                    // searches use other endpoints and stay. Fail-open.
+                                    if (FeatureFlags.hideSearchSuggestions) {
+                                        shouldDrop |= uri.getPath().contains("/fbsearch/nullstate_dynamic_sections/")
+                                                || uri.getPath().contains("/fbsearch/accounts_recs/");
+                                    }
                                     // Suggested accounts under the DM inbox (#282): the inbox's
                                     // "empty state" unit carries them; the chat list is unaffected.
                                     if (FeatureFlags.hideDmSuggestions) {
@@ -228,9 +360,15 @@ public class IGNetworkInterceptor {
 
                                     // Analytics
                                     if (FeatureFlags.isAnalyticsBlocked) {
-                                        shouldDrop |= (host != null && (host.contains("graph.instagram.com")
-                                                || host.contains("graph.facebook.com")))
-                                                || uri.getPath().contains("/logging_client_events");
+                                        if (ps.reso.instaeclipse.utils.core.Pace.on()) {
+                                            // Lower ban risk: let normal telemetry keep flowing so the
+                                            // account doesn't look headless; drop only the heavy event log.
+                                            shouldDrop |= uri.getPath().contains("/logging_client_events");
+                                        } else {
+                                            shouldDrop |= (host != null && (host.contains("graph.instagram.com")
+                                                    || host.contains("graph.facebook.com")))
+                                                    || uri.getPath().contains("/logging_client_events");
+                                        }
                                     }
 
                                     // Misc
@@ -246,10 +384,9 @@ public class IGNetworkInterceptor {
                                                 || p.contains("/presence/");
                                         FeatureStatusTracker.setHooked("SpoofLastSeen");
                                     }
-                                    // NOTE: Disable Repost is handled at the UI/action level in
-                                    // mods.ui.DisableRepostHook — NOT here. Dropping the repost network
-                                    // request is ineffective because IG applies the repost optimistically
-                                    // client-side, so the repost completes even when the request is dropped.
+                                    // Disable Repost is handled at the UI/action level in
+                                    // mods.ui.DisableRepostHook, not here: IG applies the repost
+                                    // optimistically client-side, so dropping the request doesn't stop it.
                                     if (FeatureFlags.disableDiscoverPeople) {
                                         shouldDrop |= uri.getPath().contains("/discover/ayml/");
                                         shouldDrop |= uri.getPath().contains("discover/chaining/");
@@ -276,7 +413,8 @@ public class IGNetworkInterceptor {
                 hookChainEntry(classLoader, random_param_1, random_param_2, random_param_3, dropHook);
                 // These act on every matching request, so they are in place once the hook is.
                 for (String key : new String[]{"BlockAnalytics", "DisableStoriesSection", "DisableFeedSection",
-                        "DisableReelsSection", "DisableExploreSection", "DisableCommentsSection", "HideDmSuggestions"})
+                        "DisableReelsSection", "DisableExploreSection", "DisableCommentsSection", "HideDmSuggestions",
+                        "HideExploreGrid", "HideSearchSuggestions"})
                     FeatureStatusTracker.setHooked(key);
             } else {
                 ModuleLog.line("(InstaEclipse | Interceptor): Could not resolve required classes or fields.");
@@ -285,5 +423,78 @@ public class IGNetworkInterceptor {
         } catch (Exception e) {
             ModuleLog.line("(InstaEclipse | Interceptor): ❌ " + e.getMessage());
         }
+    }
+
+    /** Your followers and following lists, opened from your profile counts, go to the copied profile (read only). */
+    private static URI moveRequest(Object request, URI uri, String movedPath, String what) throws Exception {
+        URI next = new URI(uri.getScheme(), uri.getAuthority(), movedPath, uri.getQuery(), uri.getFragment());
+        for (Class<?> c = request.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : ps.reso.instaeclipse.utils.core.SafeReflect.fields(c)) {
+                if (f.getType() != URI.class || java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                if (uri.equals(f.get(request))) f.set(request, next);
+            }
+        }
+        ModuleLog.line("(IE|ProfileSpoof) read redirected: " + what);
+        return next;
+    }
+
+    /** Profile queries carry your id in the request body: send the copied account's instead. */
+    private static void swapBody(Object request, String self, String target) {
+        try {
+            for (Class<?> c = request.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                for (Field f : ps.reso.instaeclipse.utils.core.SafeReflect.fields(c)) {
+                    if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive()
+                            || f.getType() == String.class || f.getType() == URI.class) continue;
+                    f.setAccessible(true);
+                    Object holder = f.get(request);
+                    if (holder == null || holder.getClass().getName().startsWith("java.")) continue;
+                    for (Field bf : ps.reso.instaeclipse.utils.core.SafeReflect.fields(holder.getClass())) {
+                        if (bf.getType() != byte[].class || java.lang.reflect.Modifier.isStatic(bf.getModifiers())) continue;
+                        bf.setAccessible(true);
+                        byte[] body = (byte[]) bf.get(holder);
+                        if (body == null) continue;
+                        String text = new String(body, java.nio.charset.StandardCharsets.ISO_8859_1);
+                        if (!text.contains(self)) continue;
+                        // Reads only: a mutation always goes out as sent.
+                        if (text.toLowerCase(java.util.Locale.ROOT).contains("mutation")) continue;
+                        bf.set(holder, text.replace(self, target).getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+                        ModuleLog.line("(IE|ProfileSpoof) read redirected: graphql body");
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            ModuleLog.line("(IE|ProfileSpoof) body swap failed: " + t.getMessage());
+        }
+    }
+
+    private static URI redirectToCopiedProfile(Object request, String field, URI uri) {
+        try {
+            String target = FeatureFlags.spoofTargetId;
+            String self = ps.reso.instaeclipse.mods.ui.ProfileSpoofHook.selfId();
+            if (!FeatureFlags.profileSpoofer || target == null || target.isEmpty() || self == null || self.equals(target)) return uri;
+            String path = uri.getPath();
+            if (path == null) return uri;
+            boolean armed = ps.reso.instaeclipse.mods.ui.ProfileSpoofHook.listRedirectArmed();
+            if (ps.reso.instaeclipse.mods.ui.ProfileSpoofHook.infoRedirectArmed() && path.endsWith("/users/" + self + "/info/")) {
+                return moveRequest(request, uri, path.replace("/" + self + "/", "/" + target + "/"), "info");
+            }
+            boolean profile = ps.reso.instaeclipse.mods.ui.ProfileSpoofHook.infoRedirectArmed();
+            if (profile && path.endsWith("/users/" + self + "/info_stream/")) {
+                return moveRequest(request, uri, path.replace("/" + self + "/", "/" + target + "/"), "info_stream");
+            }
+            if (profile && path.endsWith("/wwwgraphql/ig/query/")) swapBody(request, self, target);
+            String[] reads = armed
+                    ? new String[]{"/friendships/" + self + "/followers/", "/friendships/" + self + "/following/",
+                            "/usertags/" + self + "/feed/", "/feed/user/" + self + "/", "/feed/user/" + self + "/story/"}
+                    : new String[]{"/usertags/" + self + "/feed/", "/feed/user/" + self + "/", "/feed/user/" + self + "/story/"};
+            for (String read : reads) {
+                if (!path.endsWith(read)) continue;
+                return moveRequest(request, uri, path.replace("/" + self + "/", "/" + target + "/"), read);
+            }
+        } catch (Throwable t) {
+            ModuleLog.line("(IE|ProfileSpoof) redirect failed: " + t.getMessage());
+        }
+        return uri;
     }
 }

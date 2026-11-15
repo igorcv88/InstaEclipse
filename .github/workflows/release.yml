@@ -62,7 +62,7 @@ jobs:
           fi
 
       - name: Checkout pinned source with tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
@@ -137,7 +137,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -145,7 +145,7 @@ jobs:
       # Cache Gradle wrapper, dependencies, transforms and local task outputs.
       # Do not enable a redundant setup-java Gradle cache.
       - name: Gradle build cache
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Ensure minimal SDK
         shell: bash
@@ -207,13 +207,13 @@ jobs:
 
       # This is the only uploaded APK. It is signed, verified and kept for just one day.
       - name: Upload signed APK for one day
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: InstaEclipse-${{ env.VERSION_NAME }}-signed
           path: ${{ env.APK_NAME }}
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
       # Releases are durable GitHub Release assets, not GitHub Actions artifacts.
       - name: Publish persistent GitHub Release

@@ -137,6 +137,8 @@ public class FeatureFlags {
     public static volatile boolean storyInfo = false; // Story Info / Quiz Answer / Poll Results in the story menu
     public static volatile boolean storyLinks = false; // copy link-sticker urls from the story menu
     public static volatile boolean storyViewerSearch = false; // search box over your story viewers list
+    public static volatile boolean storyViewerDiagnostics = false; // opt-in metadata-only viewer-order probe
+    public static volatile boolean storyPreviewDiagnostics = false; // opt-in read-only story-tray probe
     public static volatile boolean savedOnProfile = false;        // #237: Saved button on your own profile
     public static volatile boolean profileFollowsYouLabel = false; // "Follows you" label on profiles (#239)
     public static volatile boolean fancyBioFont = false; // Edit profile: fancy (Unicode) fonts for the bio

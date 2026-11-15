@@ -79,8 +79,19 @@ public final class CompanionBridge {
             try (java.util.zip.ZipFile apk = new java.util.zip.ZipFile(info.applicationInfo.sourceDir)) {
                 java.util.zip.ZipEntry entry = apk.getEntry("assets/lspatch/config.json");
                 if (entry != null && entry.getSize() > 0 && entry.getSize() < 64 * 1024) {
-                    byte[] raw;
-                    try (java.io.InputStream in = apk.getInputStream(entry)) { raw = in.readAllBytes(); }
+                    // InputStream.readAllBytes() is not available before Android 13.
+                    // Enforce a hard bound even when ZIP metadata reports a small size.
+                    java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream((int) entry.getSize());
+                    try (java.io.InputStream in = apk.getInputStream(entry)) {
+                        byte[] chunk = new byte[4096];
+                        int count;
+                        while ((count = in.read(chunk)) != -1) {
+                            if (buffer.size() + count >= 64 * 1024)
+                                throw new java.io.IOException("Oversized LSPatch configuration");
+                            buffer.write(chunk, 0, count);
+                        }
+                    }
+                    byte[] raw = buffer.toByteArray();
                     String cert = new org.json.JSONObject(new String(raw, java.nio.charset.StandardCharsets.UTF_8))
                             .optString("originalSignature", "");
                     if (!cert.isEmpty() && cert.length() % 2 == 0 && cert.matches("[0-9a-fA-F]+")) {

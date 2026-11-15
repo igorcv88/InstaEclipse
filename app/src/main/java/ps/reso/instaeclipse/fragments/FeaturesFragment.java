@@ -2056,6 +2056,8 @@ public class FeaturesFragment extends Fragment {
                 createSwitch(R.drawable.ic_link, "#32D74B", getString(R.string.ig_dialog_misc_story_links), "storyLinks"),
                 createSwitch(R.drawable.ic_info, "#32D74B", getString(R.string.ig_dialog_misc_story_info), "storyInfo"),
                 createSwitch(R.drawable.ic_search, "#32D74B", getString(R.string.ig_dialog_misc_viewer_search), "storyViewerSearch"),
+                createSwitch(R.drawable.ic_info, "#32D74B", getString(R.string.ig_dialog_misc_viewer_diagnostics), "storyViewerDiagnostics"),
+                createSwitch(R.drawable.ic_info, "#32D74B", getString(R.string.ig_dialog_misc_preview_diagnostics), "storyPreviewDiagnostics"),
                 createExtrasSwitch("#32D74B", "hideStoriesTray")
         ));
         defs.add(Arrays.asList(

@@ -1,0 +1,238 @@
+name: Build signed InstaEclipse APK
+
+on:
+  workflow_run:
+    workflows: ['CI - tests, lint and build']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Artifact (expires after 1 day) or GitHub Release'
+        type: choice
+        options: [artifact, release]
+        default: artifact
+        required: true
+      source_sha:
+        description: 'Optional 40-character commit SHA already merged into main'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: insta-signed-apk
+  cancel-in-progress: false
+
+jobs:
+  signed-apk:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.event == 'pull_request' &&
+           github.event.workflow_run.head_repository.full_name == github.repository &&
+           github.event.workflow_run.actor.login == 'igorcv88') }}
+    name: Test, build, sign and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate trusted event and source
+        shell: bash
+        env:
+          REQUESTED: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
+          MODE: ${{ github.event_name == 'workflow_run' && 'artifact' || inputs.mode }}
+          RUN_EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "igorcv88/InstaEclipse"
+          if [[ "$RUN_EVENT" == workflow_dispatch ]]; then
+            test "$GITHUB_REF" = "refs/heads/main"
+          elif [[ "$RUN_EVENT" != workflow_run ]]; then
+            echo "::error::Unsupported workflow event" >&2
+            exit 1
+          fi
+          if [[ "$MODE" != artifact && "$MODE" != release ]]; then
+            echo "::error::Unsupported mode" >&2
+            exit 1
+          fi
+          if [[ -n "$REQUESTED" && ! "$REQUESTED" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full 40-character commit SHA" >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned source with tags
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Enforce exact pinned commit and main-only manual builds
+        shell: bash
+        env:
+          REQUESTED: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags --force
+          SOURCE_SHA="${REQUESTED:-$GITHUB_SHA}"
+          git cat-file -e "${SOURCE_SHA}^{commit}"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+            if [[ "$SOURCE_SHA" != "$(git rev-parse HEAD)" ]]; then
+              echo "::error::CI source changed since the successful workflow" >&2
+              exit 1
+            fi
+          else
+            if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
+              echo "::error::Manual signing requires a commit already merged into main" >&2
+              exit 1
+            fi
+            git checkout --detach "$SOURCE_SHA"
+          fi
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Require same four signing secrets used by OneUILiquidGlass
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for key in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "::error::Missing signing secret: $key" >&2
+              exit 1
+            fi
+          done
+
+      - name: Select version and prevent tag collisions
+        shell: bash
+        env:
+          MODE: ${{ github.event_name == 'workflow_run' && 'artifact' || inputs.mode }}
+        run: |
+          set -euo pipefail
+          LAST_PATCH="$(git tag --list 'v0.8.*' | sed -nE 's/^v0[.]8[.]([0-9]+)$/\1/p' | sort -n | tail -1)"
+          LAST_PATCH="${LAST_PATCH:-2}"
+          if (( LAST_PATCH < 2 )); then LAST_PATCH=2; fi
+          if [[ "$MODE" == "release" ]]; then
+            PATCH=$((LAST_PATCH + 1))
+            VERSION_NAME="0.8.$PATCH"
+            VERSION_CODE=$((18 + PATCH))
+            RELEASE_TAG="v$VERSION_NAME"
+            if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+              echo "::error::Tag already exists: $RELEASE_TAG" >&2
+              exit 1
+            fi
+            echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          else
+            VERSION_NAME="0.8.$LAST_PATCH-pr.${GITHUB_RUN_NUMBER}"
+            VERSION_CODE=$((19 + LAST_PATCH))
+          fi
+          {
+            echo "VERSION_NAME=$VERSION_NAME"
+            echo "VERSION_CODE=$VERSION_CODE"
+            echo "APK_NAME=InstaEclipse-$VERSION_NAME-signed.apk"
+          } >> "$GITHUB_ENV"
+
+      - name: Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Cache Gradle wrapper, dependencies, transforms and local task outputs.
+      # Do not enable a redundant setup-java Gradle cache.
+      - name: Gradle build cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Ensure minimal SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -d "$ANDROID_HOME/platforms/android-34" || ! -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
+            yes | "$SDK" --licenses >/dev/null || true
+            "$SDK" 'platforms;android-34' 'build-tools;35.0.0'
+          fi
+
+      - name: Compile release; reuse green CI for trusted PR builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          TASKS=(:app:assembleRelease)
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            TASKS=(:app:testDebugUnitTest :app:lintDebug :app:assembleRelease)
+          fi
+          ./gradlew --build-cache --parallel --max-workers=3 \
+            "${TASKS[@]}" \
+            -PreleaseVersionCode="$VERSION_CODE" \
+            -PreleaseVersionName="$VERSION_NAME"
+
+      - name: Align, sign with release keystore, verify and hash
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          UNSIGNED=app/build/outputs/apk/release/app-release-unsigned.apk
+          ALIGNED="$RUNNER_TEMP/instaeclipse-aligned.apk"
+          KEY_FILE="$RUNNER_TEMP/instaeclipse-signing.keystore"
+          trap 'rm -f "$KEY_FILE" "$ALIGNED"' EXIT
+          test -s "$UNSIGNED"
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          keytool -list -keystore "$KEY_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          "$TOOLS/zipalign" -P 16 -f 4 "$UNSIGNED" "$ALIGNED"
+          "$TOOLS/apksigner" sign \
+            --ks "$KEY_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out "$APK_NAME" "$ALIGNED"
+          "$TOOLS/zipalign" -c -P 16 4 "$APK_NAME"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK_NAME"
+          BADGING="$("$TOOLS/aapt2" dump badging "$APK_NAME")"
+          BADGING="$(head -n 1 <<< "$BADGING")"
+          grep -F "package: name='ps.reso.instaeclipse'" <<< "$BADGING"
+          grep -F "versionCode='$VERSION_CODE'" <<< "$BADGING"
+          grep -F "versionName='$VERSION_NAME'" <<< "$BADGING"
+          echo "APK_SHA256=$(sha256sum "$APK_NAME" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+
+      # This is the only uploaded APK. It is signed, verified and kept for just one day.
+      - name: Upload signed APK for one day
+        uses: actions/upload-artifact@v7
+        with:
+          name: InstaEclipse-${{ env.VERSION_NAME }}-signed
+          path: ${{ env.APK_NAME }}
+          if-no-files-found: error
+          retention-days: 1
+          archive: false
+
+      # Releases are durable GitHub Release assets, not GitHub Actions artifacts.
+      - name: Publish persistent GitHub Release
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "InstaEclipse $VERSION_NAME"
+            echo
+            echo "- Source commit: \`$SOURCE_SHA\`"
+            echo "- APK SHA-256: \`$APK_SHA256\`"
+            echo "- APK signed with the repository release keystore."
+          } > "$NOTES"
+          gh release create "$RELEASE_TAG" "$APK_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "InstaEclipse $VERSION_NAME" \
+            --notes-file "$NOTES"

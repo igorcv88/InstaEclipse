@@ -525,9 +525,19 @@ public class Module {
                         ModuleLog.line("(IE|JumpFirst) ❌ Failed to hook");
                     }
 
-                    // Search your story viewers (Plus-style)
+                    // Install diagnostic first: it observes Instagram's original data
+                    // before the optional search/sort hook transforms the adapter list.
                     try {
-                        if (!skip("StoryViewerSearchHook")) new ps.reso.instaeclipse.mods.ui.StoryViewerSearchHook().install(dexKitBridge, hostClassLoader);
+                        if (!skip("StoryViewerDiagnosticsHook"))
+                            new ps.reso.instaeclipse.mods.ui.StoryViewerDiagnosticsHook().install(dexKitBridge, hostClassLoader);
+                    } catch (Throwable ignored) {
+                        ModuleLog.line("(IE|ViewerDiag) Failed to hook");
+                    }
+
+                    // Search/sort the already-loaded story viewers (Plus-style).
+                    try {
+                        if (!skip("StoryViewerSearchHook"))
+                            new ps.reso.instaeclipse.mods.ui.StoryViewerSearchHook().install(dexKitBridge, hostClassLoader);
                     } catch (Throwable ignored) {
                         ModuleLog.line("(IE|ViewerSearch) ❌ Failed to hook");
                     }

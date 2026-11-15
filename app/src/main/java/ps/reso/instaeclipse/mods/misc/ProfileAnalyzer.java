@@ -303,12 +303,16 @@ public final class ProfileAnalyzer {
             while (!st.isEmpty()) {
                 View v = st.pop();
                 if (!v.isShown()) continue;
-                if (v.getId() != View.NO_ID && v.getId() > 0x7f000000) {
+                if (v.getId() != View.NO_ID) {
                     try {
-                        String n = res.getResourceEntryName(v.getId());
-                        if (n.contains("followers") && !n.contains("follow_context") && tapUp(v)) {
-                            ModuleLog.line(TAG + "opened followers via " + n);
-                            return true;
+                        // Inspect only host-package IDs, without making signed-int
+                        // assumptions about Android resource ID ranges.
+                        if (pkg.equals(res.getResourcePackageName(v.getId()))) {
+                            String n = res.getResourceEntryName(v.getId());
+                            if (n.contains("followers") && !n.contains("follow_context") && tapUp(v)) {
+                                ModuleLog.line(TAG + "opened followers via " + n);
+                                return true;
+                            }
                         }
                     } catch (Throwable ignored) {}
                 }

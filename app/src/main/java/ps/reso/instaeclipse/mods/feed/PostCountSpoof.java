@@ -84,9 +84,9 @@ public final class PostCountSpoof {
             // state): find the helper by the hash, then Media's int method that calls it.
             if (!found.isEmpty() && cached == null) {
                 try {
-                    for (String key : KEYS[i])
-                    for (MethodData helper : DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
-                            .usingNumbers(key.hashCode()).returnType("int").paramCount(1)))) {
+                    for (String key : KEYS[i]) {
+                        for (MethodData helper : DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(MethodMatcher.create()
+                                .usingNumbers(key.hashCode()).returnType("int").paramCount(1)))) {
                         if (!helper.isMethod() || helper.getClassName().equals(MEDIA)) continue;
                         Method h = helper.getMethodInstance(cl);
                         if (Modifier.isStatic(h.getModifiers()) && !found.contains(h)) found.add(h);
@@ -97,6 +97,7 @@ public final class PostCountSpoof {
                             Method m = md.getMethodInstance(cl);
                             if (!Modifier.isStatic(m.getModifiers()) && !found.contains(m)) found.add(m);
                         }
+                    }
                     }
                     DexKitCache.saveMethods(cacheKey, found);
                 } catch (Throwable ignored) { }

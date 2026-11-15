@@ -6,6 +6,11 @@ android {
     namespace 'ps.reso.instaeclipse'
     compileSdk 34
     buildFeatures { buildConfig true }
+    lint {
+        // Upstream v0.8.3 has untranslated strings in some locales. Keep reporting
+        // them as warnings while still failing on real API/resource/security errors.
+        warning 'MissingTranslation'
+    }
 
     defaultConfig {
         applicationId "ps.reso.instaeclipse"

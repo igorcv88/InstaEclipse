@@ -348,6 +348,7 @@
     <string name="ig_dialog_misc_viewer_search">Pesquisar Visualizadores da Sua Story</string>
     <string name="ig_viewer_search_hint">Pesquisar visualizadores</string>
     <string name="ig_dialog_misc_viewer_diagnostics">Diagnóstico de visualizações dos stories (experimental)</string>
+    <string name="ig_dialog_misc_preview_diagnostics">Diagnóstico de prévias dos stories (experimental)</string>
     <string name="ig_dialog_misc_like_undo">Janela para Anular Gostos (4 s)</string>
     <string name="ig_like_undo_bar">❤ Gostou · ANULAR</string>
     <string name="ig_like_undo_cancelled">Gosto cancelado — atualize para atualizar o coração</string>

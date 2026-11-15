@@ -22,6 +22,7 @@ import org.luckypray.dexkit.result.MethodData;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -37,8 +38,8 @@ import ps.reso.instaeclipse.utils.users.UserUtils;
 import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 /**
- * Search your story's viewers (Instagram Plus–style, our own implementation; no Plus check is
- * touched). Filters the viewers Instagram has already loaded.
+ * Search and locally sort your story's viewers (Instagram Plus–style; no Plus check is
+ * touched). Operates only on the viewer records Instagram has already loaded.
  *
  * - Viewer adapter: declaring class of the method using "search_result_rendered"
  *   (X.0U9B on 452, X.0Q5U on 451). Its private (List, boolean×3) void method is the only place
@@ -46,16 +47,17 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
  *   "dismissed_reel_viewers_list_megaphone" rebuilds the list (called after the query changes).
  * - Viewer record: class using "XDTViewerFeedbackDict" holds the viewer's
  *   com.instagram.user.model.User (found by type); username via UserUtils.
- * - UI: an EditText added above the RecyclerView that uses this adapter.
+ * - UI: a search field and sort popup added above the RecyclerView using this adapter.
+ * Sort order is persistent, but no individual viewer timestamps or replays are inferred.
  */
 public class StoryViewerSearchHook {
 
     private static final String TAG = "(IE|ViewerSearch) ";
-    private static final Map<Object, String> QUERIES = new WeakHashMap<>();
-    private static final Map<Object, Integer> SORT_MODES = new WeakHashMap<>();
+    private static final Map<Object, String> QUERIES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Object, Integer> SORT_MODES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final String SORT_PREFS = "ie_story_viewer_controls";
     private static final String SORT_KEY = "sort_mode";
-    private static final Map<Object, Boolean> INJECTED = new WeakHashMap<>();
+    private static final Map<Object, Boolean> INJECTED = Collections.synchronizedMap(new WeakHashMap<>());
     private static Method rebuild;
     private static Class<?> recordClass;
 

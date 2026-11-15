@@ -250,6 +250,9 @@ public final class ReelLanguageMatcher {
     // ── Classifier ──────────────────────────────────────────────────────────────
 
     private static String classify(String text) {
+        // TextClassifier.detectLanguage() was introduced in Android 10 (API 29).
+        // Our app still supports Android 9; bypass this optional fallback there.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return null;
         try {
             Context context = ps.reso.instaeclipse.xposedcompat.AndroidAppHelper.currentApplication();
             if (context == null) return null;

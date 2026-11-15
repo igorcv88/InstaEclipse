@@ -399,9 +399,71 @@ public class FeedVideoControlsHook {
         finally { injecting = false; cancel.recycle(); }
     }
 
-    private static boolean inVideoRegion(Activity a, float x, float y) {
-        DisplayMetrics dm = a.getResources().getDisplayMetrics();
-        return y > dm.heightPixels * 0.12f && y < dm.heightPixels * 0.88f;
+    /**
+     * The activity-wide touch hook must only claim touches on the current player's actual
+     * video. A screen-height band also catches IG's like/comment/share/save controls.
+     *
+     * If the video surface cannot be resolved or an actionable overlay is under the finger,
+     * fail open and leave the complete gesture to Instagram.
+     */
+    private boolean inVideoRegion(Activity a, float x, float y) {
+        if (a.getWindow() == null) return false;
+        Object player = PlaybackSpeedHook.currentFeedPlayer();
+        View cover = player == null ? null : findVideoView(player);
+        if (cover == null || !cover.isShown() || cover.getWidth() <= 0 || cover.getHeight() <= 0)
+            return false;
+        View decor = a.getWindow().getDecorView();
+        if (!isInsideActivity(cover, decor) || !containsScreenPoint(cover, x, y))
+            return false;
+
+        // Some IG video hosts include action buttons as children of the video container.
+        if (cover instanceof ViewGroup vg && interactiveDescendantAt(vg, x, y, 0))
+            return false;
+
+        // Other versions draw those buttons in sibling overlays above the video.
+        // Inspect each ancestor's siblings, not the video surface or its ancestors.
+        View branch = cover;
+        while (branch != decor && branch.getParent() instanceof ViewGroup parent) {
+            for (int i = parent.getChildCount() - 1; i >= 0; i--) {
+                View sibling = parent.getChildAt(i);
+                if (sibling != branch && interactiveAt(sibling, x, y, 0))
+                    return false;
+            }
+            branch = parent;
+        }
+        return branch == decor;
+    }
+
+    private static boolean isInsideActivity(View view, View decor) {
+        View current = view;
+        while (current != decor && current.getParent() instanceof View parent)
+            current = parent;
+        return current == decor;
+    }
+
+    private static boolean containsScreenPoint(View v, float x, float y) {
+        if (!v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        int[] position = new int[2];
+        v.getLocationOnScreen(position);
+        return FeedVideoHitTest.contains(x, y, position[0], position[1],
+                position[0] + v.getWidth(), position[1] + v.getHeight());
+    }
+
+    private static boolean interactiveDescendantAt(ViewGroup root, float x, float y, int depth) {
+        if (depth >= 24) return false;
+        for (int i = root.getChildCount() - 1; i >= 0; i--) {
+            if (interactiveAt(root.getChildAt(i), x, y, depth + 1)) return true;
+        }
+        return false;
+    }
+
+    private static boolean interactiveAt(View view, float x, float y, int depth) {
+        if (depth >= 24 || !containsScreenPoint(view, x, y)) return false;
+        if (view instanceof ViewGroup group && interactiveDescendantAt(group, x, y, depth))
+            return true;
+        // The corresponding touch belongs to this overlay rather than the video player.
+        return view.isClickable() || view.isLongClickable()
+                || view instanceof SeekBar;
     }
 
     /** -1 left third, 1 right third, 0 middle. */

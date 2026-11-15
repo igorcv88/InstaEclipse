@@ -138,7 +138,8 @@ public final class StoryTrayHook {
             apply(decor);
             if (!watched.add(decor)) return;
             decor.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
-                if (FeatureFlags.storyTrayScale >= 100 && !anyScaled(decor)) return;
+                if (FeatureFlags.storyTrayScale >= 100 && !anyScaled(decor)
+                        && !FeatureFlags.storyPreviewDiagnostics) return;
                 if (!pending.add(decor)) return;
                 MAIN.postDelayed(() -> {
                     pending.remove(decor);
@@ -160,7 +161,11 @@ public final class StoryTrayHook {
     private static void apply(View decor) {
         List<View> trays = new ArrayList<>();
         collect(decor, trays);
-        for (View tray : trays) scale((ViewGroup) tray, FeatureFlags.storyTrayScale);
+        for (View tray : trays) {
+            scale((ViewGroup) tray, FeatureFlags.storyTrayScale);
+            if (FeatureFlags.storyPreviewDiagnostics)
+                StoryPreviewDiagnostics.inspect((ViewGroup) tray);
+        }
     }
 
     private static void collect(View v, List<View> out) {

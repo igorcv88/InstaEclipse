@@ -54,6 +54,17 @@ jobs:
           ./gradlew --build-cache --parallel --max-workers=3 \
             :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
+      - name: Show lint diagnostics if checks fail
+        if: failure()
+        shell: bash
+        run: |
+          report=app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          if [[ -f "$report" ]]; then
+            echo "::group::Android Lint errors"
+            grep -n -C 3 ' Error:' "$report" | head -n 240 || true
+            echo "::endgroup::"
+          fi
+
       - name: Ensure debug package was built
         shell: bash
         run: test -s app/build/outputs/apk/debug/app-debug.apk

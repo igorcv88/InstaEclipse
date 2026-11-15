@@ -1,57 +1,62 @@
-name: Build Debug APK
+name: CI - tests, lint and build
 
 on:
   push:
-    branches:
-      - main  # Trigger workflow on pushes to the main branch
-      - 0.4
+    branches: [main]
   pull_request:
-    branches:
-      - main  # Trigger workflow on pull requests to the main branch
-  workflow_dispatch:  # Allow manual triggering via the GitHub Actions UI
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: insta-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build_debug_apk:
+  android:
+    name: Java 17 / Android checks
     runs-on: ubuntu-latest
-
+    timeout-minutes: 25
     steps:
-      # Step 1: Check out the repository
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Step 2: Set up JDK 17 (also caches Gradle dependencies/wrapper)
-      - name: Set up JDK 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: temurin
           java-version: '17'
-          cache: 'gradle'
 
-      # Step 3: Set up Android SDK
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # setup-gradle restores the wrapper, dependencies, Gradle user-home state and
+      # local task-output build cache. Do not also enable setup-java's Gradle cache:
+      # it duplicates work and produces competing cache writes.
+      - name: Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
         with:
-          packages: 'platform-tools'  # the old 'tools' package no longer exists
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
-      # Step 4: Grant execution permissions to gradlew
-      - name: Grant execute permission to gradlew
-        run: chmod +x ./gradlew
+      - name: Ensure only required Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -d "$ANDROID_HOME/platforms/android-34" || ! -d "$ANDROID_HOME/build-tools/35.0.0" ]]; then
+            yes | "$SDK" --licenses >/dev/null || true
+            "$SDK" 'platforms;android-34' 'build-tools;35.0.0'
+          fi
 
-      # Step 5: Run unit tests before building
-      - name: Run unit tests
-        run: ./gradlew testDebugUnitTest
+      - name: Unit tests, Android lint and build (no unsigned APK publication)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --build-cache --parallel --max-workers=3 \
+            :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
-      # Step 6: Build the debug APK
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+      - name: Ensure debug package was built
+        shell: bash
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
 
-      # Step 7: Upload the debug APK as an artifact
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+# No APK is uploaded by CI. The separate Build APK workflow exclusively publishes
+# verified, signed APKs with 1-day Actions artifact retention.

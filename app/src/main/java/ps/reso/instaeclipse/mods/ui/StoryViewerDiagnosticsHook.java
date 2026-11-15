@@ -1,5 +1,7 @@
 package ps.reso.instaeclipse.mods.ui;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -16,6 +18,7 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,6 +44,7 @@ public final class StoryViewerDiagnosticsHook {
     private static final int MAX_ROWS = 150;
     private static final int MAX_DETAILS = 35;
     private static final byte[] SALT = new byte[24];
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Map<Object, Snapshot> SNAPSHOTS =
             Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -48,9 +52,24 @@ public final class StoryViewerDiagnosticsHook {
         new SecureRandom().nextBytes(SALT);
     }
 
+    private static final class ViewerBatch {
+        final int totalRows;
+        final int inspected;
+        final Map<String, String> entries;
+
+        ViewerBatch(int totalRows, int inspected, Map<String, String> entries) {
+            this.totalRows = totalRows;
+            this.inspected = inspected;
+            this.entries = entries;
+        }
+    }
+
     private static final class Snapshot {
-        long lastAt;
         Map<String, String> entries = new HashMap<>();
+        final StoryViewerSnapshotThrottle<ViewerBatch> throttle = new StoryViewerSnapshotThrottle<>(
+                MIN_INTERVAL_MS, SystemClock::elapsedRealtime,
+                (runnable, delay) -> MAIN.postDelayed(runnable, delay),
+                batch -> emit(this, batch));
     }
 
     public void install(DexKitBridge bridge, ClassLoader cl) {
@@ -102,7 +121,9 @@ public final class StoryViewerDiagnosticsHook {
     private static void inspect(Object adapter, List<?> rows, Class<?> viewerRecord) {
         if (adapter == null) return;
         try {
-            final long now = SystemClock.elapsedRealtime();
+            // Capture metadata now, before Instagram can recycle/mutate the row list.
+            // The delayed job holds only salted IDs, positions and timestamp-shaped fields.
+            ViewerBatch batch = capture(rows, viewerRecord);
             Snapshot snap;
             synchronized (SNAPSHOTS) {
                 snap = SNAPSHOTS.get(adapter);
@@ -110,41 +131,54 @@ public final class StoryViewerDiagnosticsHook {
                     snap = new Snapshot();
                     SNAPSHOTS.put(adapter, snap);
                 }
-                if (now - snap.lastAt < MIN_INTERVAL_MS) return;
-                snap.lastAt = now;
             }
-            Map<String, String> seen = new HashMap<>();
-            List<String> changes = new ArrayList<>();
-            int viewerIndex = 0;
-            for (Object row : rows) {
-                if (row == null || !viewerRecord.isInstance(row)) continue;
-                if (viewerIndex >= MAX_ROWS) break;
-                String username = username(row);
-                if (username == null || username.isEmpty()) {
-                    viewerIndex++;
-                    continue;
-                }
-                String userKey = pseudonym(username);
-                String timeCandidates = candidateTimestamps(row);
-                String signature = viewerIndex + ":" + timeCandidates;
-                seen.put(userKey, signature);
-                String old = snap.entries.get(userKey);
-                if (old == null) {
-                    if (changes.size() < MAX_DETAILS)
-                        changes.add("first id=" + userKey + " pos=" + viewerIndex + " ts=" + timeCandidates);
-                } else if (!old.equals(signature)) {
-                    if (changes.size() < MAX_DETAILS)
-                        changes.add("changed id=" + userKey + " prior=" + old + " current=" + signature);
-                }
-                viewerIndex++;
-            }
-            ModuleLog.line(TAG + "snapshot rows=" + rows.size() + " inspected=" + viewerIndex
-                    + " tracked=" + seen.size() + " changes=" + changes.size()
-                    + " (timestamps are candidates, not proven view times)");
-            for (String change : changes) ModuleLog.line(TAG + change);
-            snap.entries = seen;
+            snap.throttle.offer(batch);
         } catch (Throwable t) {
             ModuleLog.line(TAG + "inspect failed: " + t.getClass().getSimpleName());
+        }
+    }
+
+    private static ViewerBatch capture(List<?> rows, Class<?> viewerRecord) throws Exception {
+        Map<String, String> seen = new LinkedHashMap<>();
+        int viewerIndex = 0;
+        for (Object row : rows) {
+            if (row == null || !viewerRecord.isInstance(row)) continue;
+            if (viewerIndex >= MAX_ROWS) break;
+            String username = username(row);
+            if (username != null && !username.isEmpty()) {
+                String id = pseudonym(username);
+                seen.put(id, viewerIndex + ":" + candidateTimestamps(row));
+            }
+            viewerIndex++;
+        }
+        return new ViewerBatch(rows.size(), viewerIndex, seen);
+    }
+
+    private static void emit(Snapshot snap, ViewerBatch batch) {
+        // Never leak delayed diagnostic observations after the user turns the feature off.
+        if (!FeatureFlags.storyViewerDiagnostics) return;
+        synchronized (snap) {
+            List<String> details = new ArrayList<>();
+            int changed = 0;
+            for (Map.Entry<String, String> entry : batch.entries.entrySet()) {
+                String id = entry.getKey();
+                String current = entry.getValue();
+                String old = snap.entries.get(id);
+                if (old == null) {
+                    changed++;
+                    if (details.size() < MAX_DETAILS)
+                        details.add("first id=" + id + " current=" + current);
+                } else if (!old.equals(current)) {
+                    changed++;
+                    if (details.size() < MAX_DETAILS)
+                        details.add("changed id=" + id + " prior=" + old + " current=" + current);
+                }
+            }
+            snap.entries = batch.entries;
+            ModuleLog.line(TAG + "snapshot rows=" + batch.totalRows + " inspected=" + batch.inspected
+                    + " tracked=" + batch.entries.size() + " changes=" + changed
+                    + " (timestamps are candidates, not proven view times)");
+            for (String detail : details) ModuleLog.line(TAG + detail);
         }
     }
 

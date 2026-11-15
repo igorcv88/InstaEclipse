@@ -54,9 +54,21 @@ public final class StoryPreviewDiagnostics {
                         fields.append(f.getType().getSimpleName());
                         if (fields.length() > 180) break;
                     }
+                    String holderClass = "unresolved";
+                    String rowClass = "unresolved";
+                    if (v instanceof ViewGroup list && list.getChildCount() > 0) {
+                        View child = list.getChildAt(0);
+                        rowClass = child.getClass().getName();
+                        try {
+                            Method getHolder = v.getClass().getMethod("getChildViewHolder", View.class);
+                            Object holder = getHolder.invoke(v, child);
+                            if (holder != null) holderClass = holder.getClass().getName();
+                        } catch (Throwable ignored) {}
+                    }
                     ModuleLog.line(TAG + "tray=" + tray.getClass().getName()
                             + " list=" + v.getClass().getName()
                             + " adapter=" + adapter.getClass().getName()
+                            + " holder=" + holderClass + " row=" + rowClass
                             + " fieldTypes=" + fields);
                     return;
                 }

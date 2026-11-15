@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ig_dialog_misc_viewer_diagnostics">Diagnóstico de visualizações dos stories (experimental)</string>
+    <string name="ig_dialog_misc_preview_diagnostics">Diagnóstico de prévias dos stories (experimental)</string>
+</resources>

@@ -532,6 +532,14 @@ public class Module {
                         ModuleLog.line("(IE|ViewerSearch) ❌ Failed to hook");
                     }
 
+                    // Opt-in diagnostic only; does not change viewer ordering or responses.
+                    try {
+                        if (!skip("StoryViewerDiagnosticsHook"))
+                            new ps.reso.instaeclipse.mods.ui.StoryViewerDiagnosticsHook().install(dexKitBridge, hostClassLoader);
+                    } catch (Throwable ignored) {
+                        ModuleLog.line("(IE|ViewerDiag) Failed to hook");
+                    }
+
                     // Search inside the comments sheet (#230)
                     try {
                         if (!skip("CommentSearchHook")) new ps.reso.instaeclipse.mods.misc.CommentSearchHook().install(dexKitBridge, hostClassLoader);

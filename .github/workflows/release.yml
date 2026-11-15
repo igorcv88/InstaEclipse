@@ -29,12 +29,17 @@ jobs:
     steps:
       - name: Restrict builds to the repository main branch
         shell: bash
+        env:
+          REQUESTED: ${{ inputs.source_sha }}
+          MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "igorcv88/InstaEclipse"
           test "$GITHUB_REF" = "refs/heads/main"
-          test "${{ inputs.mode }}" = artifact -o "${{ inputs.mode }}" = release
-          REQUESTED="${{ inputs.source_sha }}"
+          if [[ "$MODE" != artifact && "$MODE" != release ]]; then
+            echo "::error::Unsupported mode" >&2
+            exit 1
+          fi
           if [[ -n "$REQUESTED" && ! "$REQUESTED" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::source_sha must be a full 40-character commit SHA" >&2
             exit 1

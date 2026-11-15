@@ -27,7 +27,7 @@ The probe limits records to 150 and emits at most 35 changed items per snapshot,
 ## GitHub Actions
 There are exactly two workflow files:
 - `.github/workflows/main.yml`: CI on main commits and every PR update (unit tests, lint, compile). It **does not upload debug or unsigned APKs**.
-- `.github/workflows/release.yml`: manual **Build signed InstaEclipse APK**, using only already-merged main commits. Choose `artifact` (download expires after one day) or `release` (same signed APK is uploaded as a persistent GitHub Release asset).
+- `.github/workflows/release.yml`: automatically generates a **signed PR APK** after successful CI, but **only** for PRs from the owner's own repository, triggered by `igorcv88`. PRs from other forks get no signing secrets or signed artifact. It also supports manual **Build signed InstaEclipse APK** from an already-merged main commit. Choose `artifact` (download expires after one day) or `release` (the same signed APK is uploaded as a persistent GitHub Release asset).
 
 Signing requires four repository secrets with the **same names and values as OneUILiquidGlass**:
 `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.

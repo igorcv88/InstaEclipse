@@ -21,16 +21,10 @@ import java.util.regex.Pattern;
 
 /**
  * Decides whether a reel caption is written in one of the languages the user listed to hide
- * ("Hide reels by language"). Two layers, each fails open:
- * <ul>
- *   <li><b>Script</b> (every Android): a caption written mostly in a script that belongs to a
- *       listed non-Latin language (Arabic, Devanagari, Han, Cyrillic, Thai, ...) is hidden. Works
- *       without any classifier and never mistakes one non-Latin language for another.</li>
- *   <li><b>Language</b> (API 29+): when a listed language uses the Latin script (Spanish, French,
- *       ...), Android's own text classifier names the caption's language; it hides only when it is
- *       sure ({@link #MIN_CONFIDENCE}). A missing classifier, a low score or any error keeps the
- *       reel.</li>
- * </ul>
+ * ("Hide reels by language"). Script detection cheaply narrows candidate captions,
+ * but cannot identify languages that share a writing system (e.g. Russian and Ukrainian).
+ * The actual decision requires Android's API 29+ language classifier with confidence
+ * at least {@link #MIN_CONFIDENCE}. Missing/ambiguous classifications fail open.
  *
  * <p>A caption with fewer than {@link #MIN_LETTERS} letters (after hashtags, mentions, links,
  * emoji, digits and punctuation are dropped) can't be told and stays.
@@ -74,13 +68,12 @@ public final class ReelLanguageMatcher {
             if (!rule.active()) return false;
             String text = clean(caption);
             if (letters(text) < MIN_LETTERS) return false;
-            if (mostlyInScripts(text, rule.nonLatinScripts)) return true;
-            if (rule.hasLatin && Build.VERSION.SDK_INT >= 29) {
-                String sample = text.length() > MAX_TEXT ? text.substring(0, MAX_TEXT) : text;
-                String language = classify(sample);
-                if (language != null && rule.codes.contains(language)) return true;
-            }
-            return false;
+            // Shared Cyrillic/Devanagari/Arabic/Han scripts cannot prove language identity.
+            // No classifier exists on API 28; preserving non-target reels takes priority.
+            boolean candidate = rule.hasLatin || mostlyInScripts(text, rule.nonLatinScripts);
+            if (!candidate || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false;
+            String sample = text.length() > MAX_TEXT ? text.substring(0, MAX_TEXT) : text;
+            return ReelLanguageDecision.shouldHide(rule.codes, candidate, classify(sample));
         } catch (Throwable failure) {
             return false;
         }

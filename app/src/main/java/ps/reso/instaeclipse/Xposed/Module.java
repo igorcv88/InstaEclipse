@@ -114,9 +114,17 @@ public class Module {
             return;
         }
         if (SUPPORTED_PACKAGES.contains(lpparam.packageName)) {
-            // Only the main app process: Instagram's helper processes (":fbns" push, browser,
-            // video …) never show our features, so hooking them only costs startup time and memory.
+            // Normal features run only in the main app process. The opt-in notification
+            // diagnostic also observes helper processes (including :fbns), where Instagram
+            // can publish push notifications without the main process running.
             if (lpparam.processName != null && !lpparam.processName.equals(lpparam.packageName)) {
+                if ("1".equals(debugProp("debug.instaeclipse.notif_trace"))) {
+                    try {
+                        new ps.reso.instaeclipse.mods.extras.NotificationReplayTraceHook().install();
+                    } catch (Throwable t) {
+                        ModuleLog.line("(IE|NotifTrace) helper-process install failed: " + t);
+                    }
+                }
                 return;
             }
             ModuleLog.line("(InstaEclipse): Xposed backend: " + ps.reso.instaeclipse.xposedcompat.XposedBridge.backend().name());

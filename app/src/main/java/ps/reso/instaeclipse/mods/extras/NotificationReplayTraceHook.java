@@ -6,10 +6,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Parcelable;
+import android.service.notification.StatusBarNotification;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Map;
 import java.util.UUID;
 
 import ps.reso.instaeclipse.utils.feature.FeatureFlags;
@@ -60,7 +60,13 @@ public final class NotificationReplayTraceHook {
                 String tag = tagged ? (String) param.args[0] : null;
                 int id = (int) param.args[tagged ? 1 : 0];
                 Notification notification = (Notification) param.args[tagged ? 2 : 1];
-                if (notification != null) record(tag, id, notification);
+                if (notification == null) return;
+                // Ignore our own synthetic grouping posts, which are not fresh
+                // Instagram push deliveries and would create misleading duplicates.
+                if (NotificationControlHook.SUMMARY_TAG.equals(tag)) return;
+                if (notification.extras != null
+                        && notification.extras.containsKey(NotificationControlHook.POST_GENERATION)) return;
+                record((NotificationManager) param.thisObject, tag, id, notification);
             } catch (Throwable t) {
                 ModuleLog.line("(IE|NotifTrace) observe failure: " + t.getClass().getSimpleName());
             }
@@ -87,7 +93,8 @@ public final class NotificationReplayTraceHook {
         }
     }
 
-    private static synchronized void record(String tag, int id, Notification notification) {
+    private static synchronized void record(NotificationManager manager, String tag, int id,
+                                            Notification notification) {
         Context context = AndroidAppHelper.currentApplication();
         if (context == null) return;
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -95,6 +102,21 @@ public final class NotificationReplayTraceHook {
         String channel = notification.getChannelId();
         String identity = digest(salt, "identity", tag, String.valueOf(id));
         String fingerprint = fingerprint(salt, tag, id, notification);
+        // Observe Android's live state *before* Instagram's post. This separates a
+        // new post from a replacement of a notification already present in the shade.
+        boolean activeSameId = false;
+        boolean activeSamePayload = false;
+        try {
+            for (StatusBarNotification shown : manager.getActiveNotifications()) {
+                if (shown.getId() == id && java.util.Objects.equals(shown.getTag(), tag)) {
+                    activeSameId = true;
+                    activeSamePayload = fingerprint.equals(
+                            fingerprint(salt, tag, id, shown.getNotification()));
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
         long now = System.currentTimeMillis();
         long previous = prefs.getLong("sig:" + fingerprint, 0L);
         String oldRun = prefs.getString("run:" + fingerprint, "");
@@ -113,7 +135,10 @@ public final class NotificationReplayTraceHook {
                 .apply();
 
         ModuleLog.line("(IE|NotifTrace) notify run=" + RUN
+                + " pid=" + android.os.Process.myPid()
                 + " id=" + identity + " fp=" + fingerprint
+                + " activeSameId=" + activeSameId
+                + " activeSamePayload=" + activeSamePayload
                 + " channel=" + digest(salt, "channel", channel)
                 + " category=" + String.valueOf(notification.category)
                 + " replay48h=" + replay

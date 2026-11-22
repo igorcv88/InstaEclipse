@@ -533,6 +533,16 @@ public class Module {
                         ModuleLog.line("(InstaEclipse | NotificationFix): ❌ Failed to hook: " + t);
                     }
 
+                    // Opt-in observer first, so it sees Instagram's original notify/cancel calls
+                    // before the optional grouping hook can transform or suppress a notification.
+                    try {
+                        if ("1".equals(debugProp("debug.instaeclipse.notif_trace"))
+                                && !skip("NotificationReplayTraceHook"))
+                            new ps.reso.instaeclipse.mods.extras.NotificationReplayTraceHook().install();
+                    } catch (Throwable t) {
+                        ModuleLog.line("(IE|NotifTrace) ❌ Failed to install: " + t);
+                    }
+
                     // Extras: group / mute Instagram's notifications (NotificationManager.notify/cancel)
                     try {
                         if (!skip("NotificationControlHook")) new ps.reso.instaeclipse.mods.extras.NotificationControlHook().install(hostClassLoader);

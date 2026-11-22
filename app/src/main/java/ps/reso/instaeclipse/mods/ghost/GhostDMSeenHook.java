@@ -87,10 +87,14 @@ public class GhostDMSeenHook {
                 boolean allow = FORCE_SEND.get() == Boolean.TRUE
                         || !FeatureFlags.isGhostSeen
                         || (threadId != null && ReadReceiptWhitelist.isAllowed(threadId));
+                if (localSeenMode && threadId != null) {
+                    // Capture the decision when the mutation is queued, even if local read
+                    // state is disabled. Executor runs later, possibly after a mode toggle.
+                    remember(threadId, allow);
+                }
                 if (localSeenMode && FeatureFlags.markSeenReadLocally) {
                     // Let Instagram queue it (local read state); the executor hook stops the send.
                     if (threadId != null) {
-                        remember(threadId, allow);
                         if (allow) {
                             heldBack.remove(threadId);
                         } else if (param.method instanceof Method m) {
@@ -218,16 +222,17 @@ public class GhostDMSeenHook {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
                 try {
-                    if (!FeatureFlags.isGhostSeen) return;
                     String threadId = null;
                     for (int i = 0; i < param.args.length && threadId == null; i++) {
                         if (i != cbIndex) threadId = threadIdOfMutation(param.args[i]);
                     }
-                    Boolean allow = threadId == null ? null : sendAllowed.get(threadId);
-                    if (allow == null) {
-                        // Queued before this process started (persisted queue) or untracked.
-                        allow = threadId != null && ReadReceiptWhitelist.isAllowed(threadId);
-                    }
+                    // Do not use the CURRENT Ghost switch to override a decision taken
+                    // when this asynchronous mutation was queued. Consume it once so a
+                    // later untracked mutation cannot inherit a stale "allow" decision.
+                    Boolean queued = threadId == null ? null : sendAllowed.remove(threadId);
+                    boolean allow = SeenDispatchPolicy.shouldSend(queued,
+                            FeatureFlags.isGhostSeen,
+                            threadId != null && ReadReceiptWhitelist.isAllowed(threadId));
                     if (allow) return;
                     Object callback = param.args[cbIndex];
                     if (callback == null) return;

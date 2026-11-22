@@ -235,7 +235,13 @@ public class GhostDMSeenHook {
                             threadId != null && ReadReceiptWhitelist.isAllowed(threadId));
                     if (allow) return;
                     Object callback = param.args[cbIndex];
-                    if (callback == null) return;
+                    if (callback == null) {
+                        // Never leak a hidden receipt just because Instagram supplied no
+                        // callback to acknowledge the locally completed mutation.
+                        param.setResult(null);
+                        ModuleLog.line("(InstaEclipse | GhostModeSeen): blocked unacknowledged seen mutation");
+                        return;
+                    }
                     // Report success (no error) without sending: the queue marks the mutation
                     // "uploaded" and commits the seen state locally.
                     done.invoke(callback, null, null);

@@ -22,14 +22,14 @@ import ps.reso.instaeclipse.utils.ghost.UnsentLog;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Injects an "unsent messages" button into the DM thread's top action bar. Tapping it opens a
- * dialog listing the messages the other party unsent in THIS thread (from UnsentLog), so they
- * survive refresh/restart. The thread header is a classic Android View action bar (IGDS), so we
- * add a View to it via a global-layout listener (thread open is a fragment transaction, so no
- * activity onResume fires). Gated on FeatureFlags.keepUnsentMessages.
+ * Injects an "unsent messages" button into the DM thread's top action bar; tapping it lists the
+ * messages the other party unsent in THIS thread (from UnsentLog, so they survive refresh/restart).
+ * The header is a classic Android View action bar (IGDS), so the View is added via a global-layout
+ * listener (thread open is a fragment transaction, no activity onResume). Gated on
+ * FeatureFlags.keepUnsentMessages.
  *
- * Current-thread id is read from the thread root's tag key (direct_thread_view_layout_tag_key) —
- * this build logs what it finds there to confirm the id source on-device.
+ * Current-thread id comes from the thread root's tag key (direct_thread_view_layout_tag_key); this
+ * build logs what it finds there to confirm the id source on-device.
  */
 public class UnsentThreadButtonHook {
 
@@ -193,11 +193,10 @@ public class UnsentThreadButtonHook {
 
 
     /**
-     * Read the open thread's id from the thread ACTIVITY itself. A DM thread runs in its own
-     * ModalActivity, launched with that thread's DirectThreadKey, so the key lives in the
-     * activity's intent extras / object graph for the activity's whole lifetime — immune to
-     * background igThreadIgid churn and header rebuilds during a refresh. Name-agnostic (matched by
-     * class name containing "DirectThreadKey"), so obfuscation doesn't matter.
+     * Reads the id from the thread ACTIVITY itself. A DM thread's ModalActivity is launched with its
+     * DirectThreadKey, so the key lives in the intent extras / object graph for the activity's
+     * lifetime — immune to background igThreadIgid churn and header rebuilds on refresh. Matched by
+     * class name containing "DirectThreadKey", so obfuscation doesn't matter.
      */
     /** The thread key the chat's own activity was launched with (a chat opened in ModalActivity,
      *  e.g. from a notification or link). The main activity's intent never carries one. */

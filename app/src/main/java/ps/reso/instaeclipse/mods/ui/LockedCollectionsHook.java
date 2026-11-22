@@ -249,7 +249,6 @@ public class LockedCollectionsHook {
         else flip.run();
     }
 
-    /** Covers a locked collection until unlocked; cancelling leaves it. */
     /** The collection screen (and its grid/reels child fragments, which carry the same arguments)
      *  stays hidden behind one passcode prompt; Cancel leaves it. */
     private static void gate(Activity a, Object frag, View root) {

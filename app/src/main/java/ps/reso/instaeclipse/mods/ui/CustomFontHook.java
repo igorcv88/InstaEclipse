@@ -19,14 +19,14 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 /**
  * Custom UI font: replace Instagram's text typeface with a user-supplied .ttf/.otf.
  *
- * Framework-level (version-proof, no obfuscated names): every IG typeface load ultimately goes
- * through android.graphics.Typeface.createFromAsset / createFromFile (IG's TypefaceRepository uses
- * createFromAsset for bundled fonts and createFromFile for downloaded ones). We hook those and
- * return the user's font when the feature is on. This build ships no icon-glyph font (icons are
- * vector drawables), so replacing the text typeface doesn't break icons; we still skip any asset
- * whose name looks like an icon/glyph font as a safeguard.
+ * Framework-level (version-proof, no obfuscated names): every IG typeface load goes through
+ * android.graphics.Typeface.createFromAsset / createFromFile (IG's TypefaceRepository uses
+ * createFromAsset for bundled fonts and createFromFile for downloaded ones). Those are hooked to
+ * return the user's font when enabled. This build ships no icon-glyph font (icons are vector
+ * drawables), so replacing the text typeface doesn't break icons; asset names that look like an
+ * icon/glyph font are skipped anyway as a safeguard.
  *
- * The font is picked via the system file picker (ACTION_GET_CONTENT) and copied into the module's
+ * Font is picked via the system file picker (ACTION_GET_CONTENT) and copied into the module's
  * filesDir; applied on the next process start (Typeface results are cached by IG).
  */
 public class CustomFontHook {
@@ -350,10 +350,10 @@ public class CustomFontHook {
     // a MetadataRepoLoaderCallback. All of it is located by emoji2's own strings, not by X.* name.
 
     /**
-     * Font-fallback method: rather than feeding EmojiCompat a special metadata font (which requires
-     * a NotoColorEmojiCompat-format file), we DISABLE EmojiCompat so it stops converting emoji into
+     * Font-fallback method: rather than feed EmojiCompat a special metadata font (which needs a
+     * NotoColorEmojiCompat-format file), EmojiCompat is disabled so it stops converting emoji into
      * its-own-font spans. Emoji then render through the normal text pipeline, where the emoji font
-     * is added as a fallback family on the active typeface (see getCombo). This works with any plain
+     * is added as a fallback family on the active typeface (see getCombo). Works with any plain
      * color-emoji .ttf (CBDT/CBLC + cmap), e.g. a raw Apple emoji font.
      *
      * Disable = make the metadata loader worker report failure to its callback (onFailed, see

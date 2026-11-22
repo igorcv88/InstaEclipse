@@ -31,7 +31,7 @@ public class HideSuggestedFeedItemsHook {
             @Override
             protected void afterHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
                 if (!FeatureFlags.hideSuggestionsInFeed && !FeatureFlags.hideThreadsSuggestions
-                        && !FeatureFlags.hideLikedPosts) return;
+                        && !FeatureFlags.hideLikedPosts && !FeatureFlags.hidePaidPartnerships) return;
 
                 Object result = param.getResult();
                 if (result == null) return;
@@ -67,6 +67,8 @@ public class HideSuggestedFeedItemsHook {
                     // Real post: only hidden when "Hide liked posts" is on and you already liked it.
                     // Applied at parse time, so a post liked now disappears on the next refresh.
                     if (FeatureFlags.hideLikedPosts && isLiked(media)) param.setResult(null);
+                    // Paid partnership / sponsored (boosted) posts (#275).
+                    else if (PaidPartnershipFilter.shouldHide(media)) param.setResult(null);
                     return;
                 }
                 if (!FeatureFlags.hideSuggestionsInFeed && !FeatureFlags.hideThreadsSuggestions) return;
@@ -80,6 +82,7 @@ public class HideSuggestedFeedItemsHook {
         };
 
         resolveHasLikedGetter(bridge, classLoader);
+        PaidPartnershipFilter.install(bridge, classLoader);
 
         if (DexKitCache.isCacheValid()) {
             String cached = DexKitCache.loadString(CACHE_KEY_PARSER);
@@ -208,14 +211,13 @@ public class HideSuggestedFeedItemsHook {
         }
     }
 
-    // Mark the feature(s) as hooked as soon as the filter is successfully attached, rather
-    // than waiting for a matching feed item to actually be filtered at runtime. The status
-    // toast is built ~1.5s after the main activity's onCreate — whether a suggestion/Threads
-    // unit has scrolled into the feed by then is essentially random, so gating the status on
-    // that produced a false ❌ even when the hook was installed and working correctly.
+    // Mark hooked when the filter attaches, not when an item is first filtered: the status
+    // toast fires ~1.5s after the main activity's onCreate, by which point whether a
+    // suggestion/Threads unit has scrolled in is random — gating on that gave a false ❌.
     private void markHookedForEnabledFlags() {
         if (FeatureFlags.hideSuggestionsInFeed) FeatureStatusTracker.setHooked("HideSuggestionsInFeed");
         if (FeatureFlags.hideThreadsSuggestions) FeatureStatusTracker.setHooked("HideThreadsSuggestions");
         if (FeatureFlags.hideLikedPosts && hasLikedGetter != null) FeatureStatusTracker.setHooked("HideLikedPosts");
+        if (FeatureFlags.hidePaidPartnerships && PaidPartnershipFilter.isReady()) FeatureStatusTracker.setHooked("HidePaidPartnerships");
     }
 }

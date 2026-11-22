@@ -17,7 +17,7 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
  * IG opens web links with an explicit Intent to its in-app browser activity
  * (com.instagram.inappbrowser.fragments.BrowserLiteInMainProcessIGActivity on 451, or
  * com.facebook.browser.lite.BrowserLiteActivity) carrying the URL as the Intent data. Every in-process
- * activity start goes through android.app.Instrumentation#execStartActivity, so we hook that
+ * activity start goes through android.app.Instrumentation#execStartActivity, hooked here
  * (framework API — no IG class names or DexKit needed) and, for an in-app-browser Intent with an
  * external http(s) URL, rewrite the Intent in place into a plain ACTION_VIEW for the system's default
  * browser. The l.instagram.com link shim is unwrapped to the real destination, and IG's private

@@ -20,38 +20,34 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 /**
  * Disable Repost (feed + reels/clips + profile grid).
  *
- * Repost is created optimistically/client-side, so dropping the network request does NOT stop
- * it — IG applies the repost locally regardless. We neutralise IG's OWN repost code paths.
- * There are two independent paths on 447.0.0.21.81, so this installs two hooks:
+ * Repost is applied client-side, so dropping the network request doesn't stop it; IG's own repost
+ * code paths are neutralised instead. Two independent paths on 447.0.0.21.81, so two hooks:
  *
- * 1) REELS + PROFILE-GRID — the shared RepostActionHandler. We swallow its void entry points,
- *    anchored on IG's stable {@code android_purge_26_q3_*} trace-scope markers (never obfuscated
- *    X.* names), so the tap does nothing:
+ * 1) REELS + PROFILE-GRID — the shared RepostActionHandler. Its void entry points are swallowed,
+ *    anchored on IG's stable {@code android_purge_26_q3_*} trace-scope markers (not obfuscated
+ *    X.* names):
  *      • RepostActionHandler.handleRepostButtonTapped(...)                         (tap entry)
  *      • OnBoardingExperiencesRepostActionHandlerProxy.handleRepostButtonTapped(...) (proxy)
  *      • RepostActionHandler.performRepostAction(...)                              (executor)
  *    All void → {@code setResult(null)} is a clean skip.
  *
- * 2) HOME FEED (timeline dense-UFI) — a SEPARATE path that does NOT route through
- *    RepostActionHandler (proven on-device: the handler hook fires yet the feed repost still
- *    commits). Empirical instrumentation showed the feed tap drives
- *    {@code RepostsRepository.postRepost}, whose coroutine {@code RepostsRepository$postRepost$2}
- *    performs BOTH the optimistic "Reposted"/Undo UI apply (OptimisticPostOperation) AND the
- *    network commit (OptimisticNetworkOperation — the {@code xdt_update_media_note_repost_text}
- *    mutation). We skip the repository's VOID launcher that builds+launches that coroutine, so
- *    nothing runs: no optimistic apply, no network. Being VOID, {@code setResult(null)} is a
- *    clean, sentinel-safe skip — unlike the coroutine body itself, whose {@code invokeSuspend}
- *    must return the exact Kotlin COROUTINE_SUSPENDED / Unit sentinel or the machinery crashes.
+ * 2) HOME FEED (timeline dense-UFI) — a separate path that does NOT route through
+ *    RepostActionHandler (the handler hook fires yet the feed repost still commits). The feed tap
+ *    drives {@code RepostsRepository.postRepost}, whose coroutine {@code RepostsRepository$postRepost$2}
+ *    does BOTH the optimistic "Reposted"/Undo UI apply (OptimisticPostOperation) AND the network
+ *    commit (OptimisticNetworkOperation — the {@code xdt_update_media_note_repost_text} mutation).
+ *    Skipping the repository's VOID launcher that builds+launches that coroutine runs neither.
+ *    Being VOID, {@code setResult(null)} is sentinel-safe — unlike the coroutine body itself, whose
+ *    {@code invokeSuspend} must return the exact Kotlin COROUTINE_SUSPENDED / Unit sentinel.
  *
- *    The launcher is resolved WITHOUT obfuscated names: load the stably-named coroutine class
+ *    Launcher resolved WITHOUT obfuscated names: load the stably-named coroutine class
  *    {@code com.instagram.reposts.data.RepostsRepository$postRepost$2}, take its owning
  *    RepostsRepository class (enclosing class, else its RepostsRepository-typed constructor
- *    param), and hook that class's unique {@code void(<params>, kotlin.jvm.functions.Function1)}
+ *    param), hook that class's unique {@code void(<params>, kotlin.jvm.functions.Function1)}
  *    launcher. likeRepost launches from other classes, so this can't touch it; removeRepost is a
  *    different method, so undo still works.
  *
- * Everything is gated behind {@link FeatureFlags#disableRepost} and wrapped in try/catch: a miss
- * logs and no-ops, it never crashes IG.
+ * Gated behind {@link FeatureFlags#disableRepost} and wrapped in try/catch; a miss logs and no-ops.
  */
 public class DisableRepostHook {
 

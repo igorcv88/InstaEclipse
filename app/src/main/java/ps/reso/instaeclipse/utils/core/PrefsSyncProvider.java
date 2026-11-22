@@ -17,13 +17,13 @@ import java.util.Map;
 
 /**
  * Lives in the companion app. Instagram -> companion settings sync: the hooked Instagram process
- * calls {@link #METHOD_PUSH} with its settings (and their {@code __igts_} / {@code __applied_}
- * stamps) at startup and after every change made in its own menu, and the companion's
- * {@code instaeclipse_cache} is updated per {@link PrefsMerge} (newer change wins).
+ * calls {@link #METHOD_PUSH} with its settings (plus their {@code __igts_} / {@code __applied_}
+ * stamps) at startup and after every change in its menu; the companion's {@code instaeclipse_cache}
+ * is updated per {@link PrefsMerge} (newer change wins).
  *
- * <p>Unlike the {@code ACTION_REQUEST_PREFS} round trip, this works when the companion is not
- * running (the call starts it) and doesn't depend on Instagram being alive and unfrozen when the
- * companion opens. Only supported Instagram packages may call it (uid checked via the binder).
+ * <p>Unlike the {@code ACTION_REQUEST_PREFS} round trip, this works when the companion isn't
+ * running (the call starts it) and doesn't need Instagram alive and unfrozen when the companion
+ * opens. Only supported Instagram packages may call it (uid checked via the binder).
  */
 public class PrefsSyncProvider extends ContentProvider {
 

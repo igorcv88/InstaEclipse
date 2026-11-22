@@ -9,15 +9,12 @@ import androidx.annotation.StringRes;
 import ps.reso.instaeclipse.utils.core.CommonUtils;
 
 /**
- * Loads string resources from the InstaEclipse module APK while running inside
- * the host app (Instagram) process.
+ * Loads the module APK's string resources while running inside the host (Instagram) process.
  *
- * createPackageContext already inherits the device's current locale/configuration,
- * so Android's resource system automatically picks the correct values-xx folder.
- * No manual locale override needed. Some frameworks (Vector v2.2) hide the module
- * package from the host, so createPackageContext throws; then the module APK is
- * opened directly (XModuleResources on Module.moduleSourceDir) with the host's
- * configuration, which keeps the same locale selection.
+ * createPackageContext inherits the device locale/config, so Android picks the right values-xx
+ * folder with no manual override. Some frameworks (Vector v2.2) hide the module package, so it
+ * throws; then the module APK is opened directly (XModuleResources on Module.moduleSourceDir) with
+ * the host's configuration, keeping the same locale selection.
  */
 public final class I18n {
 

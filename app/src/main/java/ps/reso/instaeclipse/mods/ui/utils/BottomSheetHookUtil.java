@@ -67,11 +67,8 @@ public class BottomSheetHookUtil {
     }
 
     private static void hookMethod(Method reflectMethod) {
-        // This getter is called on every navigation action, layout pass, and scroll
-        // event — it is a hot path. We do NOT post any work to the main thread here.
-        // onCreate and onResume hooks are responsible for all UI setup and ghost emoji
-        // updates. This hook exists only to locate the method; its body is intentionally
-        // empty to avoid any per-call overhead.
+        // Hot path (every navigation, layout pass, scroll). Body kept empty to avoid per-call
+        // overhead; this only locates the method — UI setup lives in the onCreate/onResume hooks.
         XposedBridge.hookMethod(reflectMethod, new XC_MethodHook() { });
         ModuleLog.line("(InstaEclipse | BottomSheet): ✅ Hooked: " + reflectMethod.getDeclaringClass().getName() + "." + reflectMethod.getName());
     }

@@ -103,12 +103,9 @@ public class ProfileFollowsYouHook {
         }
     }
 
-    /**
-     * Result of IG's /friendships/show/ call (parsed by FollowStatusHook): used when the User
-     * model doesn't carry followed_by yet (common for accounts you don't follow).
-     */
-    /** userId -> followed_by from /friendships/show/, kept so a result that arrives before the
-     *  profile screen registers is still applied. */
+    /** userId -> followed_by from IG's /friendships/show/ call (parsed by FollowStatusHook), used
+     *  when the User model doesn't carry followed_by yet (accounts you don't follow), kept so a
+     *  result arriving before the profile screen registers is still applied. */
     private static final java.util.Map<String, Boolean> RESULTS = new java.util.concurrent.ConcurrentHashMap<>();
 
     public static void onFollowResult(String userId, boolean followedBy) {
@@ -132,6 +129,10 @@ public class ProfileFollowsYouHook {
         try {
             View root = (View) frag.getClass().getMethod("getView").invoke(frag);
             if (root == null) return;
+            Object vm0 = fieldOfType(frag, VIEW_MODEL);
+            Object shown = vm0 != null ? fieldOfType(vm0, USER) : null;
+            if (ProfileSpoofHook.isOwnOrCopied(shown)) return;
+            if (ProfileSpoofHook.spoofedProfileInFront(root)) return;
             Boolean followsMe = known != null ? known : followedBy(frag);
             if (followsMe == null) followsMe = cachedResult(frag);
             if (followsMe == null) {
@@ -173,6 +174,7 @@ public class ProfileFollowsYouHook {
     }
 
     private static void standalone(TextView tv, boolean followsMe) {
+        if (ProfileSpoofHook.spoofedProfileInFront(tv)) return;
         String text = I18n.t(tv.getContext(), followsMe ? R.string.ig_profile_follows_you : R.string.ig_profile_not_following_you);
         SpannableStringBuilder sb = new SpannableStringBuilder(text);
         sb.setSpan(new ForegroundColorSpan(followsMe ? 0xFF34C759 : 0xFFFF453A), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -203,6 +205,7 @@ public class ProfileFollowsYouHook {
     }
 
     private static void label(TextView tv, boolean followsMe) {
+        if (ProfileSpoofHook.spoofedProfileInFront(tv)) return;
         CharSequence cur = tv.getText();
         if (cur == null || cur.length() == 0) return;
         String yes = I18n.t(tv.getContext(), R.string.ig_profile_follows_you);

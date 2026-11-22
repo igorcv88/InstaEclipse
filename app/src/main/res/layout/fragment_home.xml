@@ -255,22 +255,22 @@
                 app:iconPadding="6dp" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/download_instagram_button"
+                android:id="@+id/patch_instagram_button"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:contentDescription="@string/download_apk"
+                android:contentDescription="@string/patch_title"
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:minHeight="72dp"
                 android:paddingStart="4dp"
                 android:paddingEnd="4dp"
-                android:text="@string/home_action_download"
+                android:text="@string/home_action_patch"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
                 app:cornerRadius="20dp"
-                app:icon="@drawable/ic_download"
+                app:icon="@drawable/ic_patch"
                 app:iconGravity="top"
                 app:iconPadding="6dp" />
         </LinearLayout>

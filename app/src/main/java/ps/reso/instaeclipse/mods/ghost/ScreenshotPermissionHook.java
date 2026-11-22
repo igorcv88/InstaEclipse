@@ -11,13 +11,12 @@ import ps.reso.instaeclipse.utils.feature.FeatureStatusTracker;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Strips FLAG_SECURE from every Window.setFlags / Window.addFlags call so the
- * user can take screenshots even when Instagram would normally block them.
+ * Strips FLAG_SECURE from every Window.setFlags / Window.addFlags call so screenshots work where
+ * Instagram would block them.
  *
- * Instagram sets FLAG_SECURE on several windows (DM threads, stories, reels)
- * which causes the system to show "App doesn't allow screenshots". We intercept
- * both entry points before the flag reaches the WindowManager so no patching
- * of Instagram's internal classes is required.
+ * IG sets FLAG_SECURE on some windows (DM threads, stories, reels), which makes the system show
+ * "App doesn't allow screenshots". Clearing it at both entry points before it reaches the
+ * WindowManager needs no patching of IG's internal classes.
  */
 public class ScreenshotPermissionHook {
 

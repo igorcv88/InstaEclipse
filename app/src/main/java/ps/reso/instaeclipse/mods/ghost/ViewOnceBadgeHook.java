@@ -20,21 +20,19 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 /**
- * Restores Instagram's NATIVE view-once / view-twice corner icon that the "Show View-Once/Twice
- * as Normal Media" feature (permanentViewMode) hides by rewriting view_mode -> "permanent".
+ * Restores IG's native view-once/twice corner icon that permanentViewMode ("Show View-Once/Twice
+ * as Normal Media") hides by rewriting view_mode -> "permanent".
  *
- * Render path (447): the visual message's render-props object (X/0E4S) carries the view_mode
- * String; the composable X/0YKc.A00 (RavenCornerIcon) draws the once vs twice icon based on it.
- * Because permanentViewMode rewrites the model's view_mode to "permanent" at parse, by the time
- * the props are built the mode is "permanent" and no icon is drawn.
+ * Render path (447): render-props object X/0E4S carries the view_mode String; composable X/0YKc.A00
+ * (RavenCornerIcon) draws once vs twice from it. permanentViewMode rewrites view_mode to "permanent"
+ * at parse, so by props-build time it's "permanent" and no icon draws.
  *
- * Fix: GhostPermanentViewHook stashes the ORIGINAL "once"/"replayable" (keyed by media id) before
- * the rewrite. Here we hook the props constructor (anchored on a ctor that inlines BOTH the "once"
- * and "replayable" strings — that is 0E4S), and when its mode is "permanent" and one of its
- * id-like String fields matches the stash, we put the original mode back so IG draws its own icon.
+ * GhostPermanentViewHook stashes the original "once"/"replayable" (keyed by media id) before the
+ * rewrite. Hook the props ctor (anchored on the ctor inlining BOTH "once" and "replayable" — 0E4S);
+ * when mode is "permanent" and an id-like String field matches the stash, put the original mode back.
  *
- * Gated on permanentViewMode (the icon is only missing when that feature is active).
- * NOTE: this build carries PROBE logging to confirm field layout / id-matching on-device.
+ * Gated on permanentViewMode (icon only missing when it's active).
+ * Carries PROBE logging to confirm field layout / id-matching on-device.
  */
 public class ViewOnceBadgeHook {
 
@@ -53,8 +51,8 @@ public class ViewOnceBadgeHook {
         }
 
         try {
-            // The render-props ctor inlines BOTH "once" and "replayable" to compute its
-            // "isRaven" flag. RavenCornerIcon (0YKc.A00) also references both, so require <init>.
+            // props ctor inlines BOTH "once" and "replayable" for its "isRaven" flag; RavenCornerIcon
+            // (0YKc.A00) references both too, so require <init>.
             List<MethodData> methods = DexKitQueryCache.findMethod(bridge, FindMethod.create()
                     .matcher(MethodMatcher.create()
                             .name("<init>")
@@ -63,9 +61,8 @@ public class ViewOnceBadgeHook {
                 ModuleLog.line("(IE|VOBadge) ❌ view-once props ctor not found");
                 return;
             }
-            // PROBE build: hook EVERY match (ctor or method). The body is gated on
-            // permanentViewMode and only logs / restores, so hooking several is harmless and
-            // tells us which class actually carries the view_mode we must restore.
+            // PROBE: hook every match (ctor or method). Body is gated on permanentViewMode and only
+            // logs/restores, so hooking several is harmless and shows which class carries view_mode.
             int hooked = 0;
             for (MethodData md : methods) {
                 try {
@@ -98,11 +95,10 @@ public class ViewOnceBadgeHook {
                 Object[] args = param.args;
                 if (args == null) return;
                 try {
-                    // GhostPermanentViewHook rewrote the model's view_mode to "permanent" (both
-                    // types, so IG keeps it re-viewable). Map it BACK to the real ephemeral value
-                    // here (render props only) so IG's own ctor computes the ephemeral-gate boolean
-                    // and draws the correct native 1-vs-2 badge. The original once/twice type is
-                    // looked up from ORIGINAL_BY_KEY via an id/timestamp long shared with the model.
+                    // model's view_mode was rewritten to "permanent"; map it back to the ephemeral
+                    // value here (render props only) so IG's ctor draws the native 1-vs-2 badge.
+                    // Original once/twice type comes from ORIGINAL_BY_KEY via an id/timestamp long
+                    // shared with the model.
                     int modeIdx = -1;
                     for (int i = 0; i < args.length; i++) {
                         if (GhostPermanentViewHook.PERMANENT.equals(args[i])) { modeIdx = i; break; }

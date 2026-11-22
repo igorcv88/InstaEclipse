@@ -58,7 +58,7 @@ public class DisableVideoAutoPlayHook {
 
     private void findAndHookDynamicMethod(DexKitBridge bridge) {
         try {
-            // Step 1: Find methods referencing "ig_disable_video_autoplay"
+            // methods referencing "ig_disable_video_autoplay"
             List<MethodData> methods = DexKitQueryCache.findMethod(bridge, FindMethod.create()
                     .matcher(MethodMatcher.create()
                             .usingStrings("ig_disable_video_autoplay")
@@ -70,7 +70,7 @@ public class DisableVideoAutoPlayHook {
                 return;
             }
 
-            // Step 2: Find the correct method: boolean return type, 1 parameter
+            // pick the method: boolean return, 1 param
             for (MethodData method : methods) {
                 boolean returnTypeMatch = String.valueOf(method.getReturnType()).contains("boolean");
                 boolean paramTypesMatch = method.getParamTypes().size() == 1;
@@ -92,7 +92,6 @@ public class DisableVideoAutoPlayHook {
             Method targetMethod = method.getMethodInstance(Module.hostClassLoader);
             DexKitCache.saveMethod("AutoPlayDisable", targetMethod);
             hookMethod(targetMethod);
-            ps.reso.instaeclipse.utils.feature.FeatureStatusTracker.setHooked("DisableVideoAutoPlay");
             ModuleLog.line("(InstaEclipse | AutoPlayDisable): ✅ Hooked (dynamic check): " +
                     method.getClassName() + "." + method.getName());
         } catch (Exception e) {
@@ -107,6 +106,9 @@ public class DisableVideoAutoPlayHook {
                 if (FeatureFlags.disableVideoAutoPlay) param.setResult(true);
             }
         });
+        // Here, not only after a fresh lookup: from the second start on the method comes from the
+        // per-version cache, and the status then said it couldn't attach (#297).
+        ps.reso.instaeclipse.utils.feature.FeatureStatusTracker.setHooked("DisableVideoAutoPlay");
     }
 
     private void hookManualPlayOverlayLifecycle() {

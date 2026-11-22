@@ -18,10 +18,10 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 public class AdBlocker {
 
-    // Marker string referenced inside the ad-insertion decision method.
+    // Marker strings referenced inside the ad-insertion decision method.
     // IG >= 437 refactored SponsoredContentController and dropped the old
-    // "SponsoredContentController.insertItem" trace tag, so we try the new
-    // marker first and fall back to the legacy one for older installs.
+    // "SponsoredContentController.insertItem" trace tag; new marker first,
+    // legacy fallback for older installs.
     private static final String[] INSERT_ITEM_MARKERS = {
             "Is ad pod",
             "SponsoredContentController.insertItem"

@@ -28,15 +28,15 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
  * Message edit history (#243): keep the text a DM had before it was edited and show it in
  * Instagram's own "Edited" history view.
  *
- * - The DM message class is the return type of the lookup using ": null_direct_message"
- *   (X.00zC on 452). An incoming edit is merged into the stored message by its synchronized
- *   (UserSession, Message, x) method (A1B on 452), which replaces the text; we diff the String
- *   fields around it and keep the previous text when exactly one changed.
- * - IG's history UI reads the message's edit-history list getter (A13 on 452: the ()List method
- *   of the message class called by code that reads com.instagram.direct.model.json
- *   .DirectMessageEditHistory fields) and is shown only when that list is non-empty. When the
- *   server sent none, we return our recorded versions as DirectMessageEditHistory objects built
- *   through its Parcelable CREATOR (writeToParcel order: body String, timestamp long µs).
+ * - DM message class = return type of the lookup using ": null_direct_message" (X.00zC on 452).
+ *   An incoming edit is merged into the stored message by its synchronized (UserSession, Message, x)
+ *   method (A1B on 452), which replaces the text; diff the String fields around it and keep the
+ *   previous text when exactly one changed.
+ * - IG's history UI reads the message's edit-history list getter (A13 on 452: the ()List method of
+ *   the message class, called by code that reads com.instagram.direct.model.json
+ *   .DirectMessageEditHistory fields), shown only when the list is non-empty. When the server sent
+ *   none, return recorded versions as DirectMessageEditHistory objects built through its Parcelable
+ *   CREATOR (writeToParcel order: body String, timestamp long µs).
  * In-memory only: history recorded while Instagram is running.
  */
 public class EditHistoryHook {

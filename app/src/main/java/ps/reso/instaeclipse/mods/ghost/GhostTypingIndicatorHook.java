@@ -40,7 +40,7 @@ public class GhostTypingIndicatorHook {
         }
 
         try {
-            // Step 1: Find methods containing the string "is_typing_indicator_enabled"
+            // methods containing "is_typing_indicator_enabled"
             List<MethodData> methods = DexKitQueryCache.findMethod(bridge, FindMethod.create()
                     .matcher(MethodMatcher.create().usingStrings("is_typing_indicator_enabled")));
 
@@ -58,7 +58,7 @@ public class GhostTypingIndicatorHook {
                 try {
                     reflectMethod = method.getMethodInstance(Module.hostClassLoader);
                 } catch (Throwable e) {
-                    // Skip method if it can't be resolved
+                    // can't resolve → skip
                     continue;
                 }
 
@@ -66,9 +66,9 @@ public class GhostTypingIndicatorHook {
                 int modifiers = reflectMethod.getModifiers();
 
                 // Old shape (<= 429): static final void method(ClassType, boolean)
-                // New shape (437+): instance final void method(boolean) — the string is now
-                // just a QuickPerformanceLogger marker label, not a functional flag key, and
-                // the leading ClassType param was dropped entirely.
+                // New shape (437+): instance final void method(boolean) — the string is now just a
+                // QuickPerformanceLogger marker label, not a flag key, and the leading ClassType
+                // param was dropped.
                 boolean matchesOldShape = Modifier.isStatic(modifiers) &&
                         Modifier.isFinal(modifiers) &&
                         paramTypes.size() == 2 &&

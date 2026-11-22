@@ -22,11 +22,8 @@ import ps.reso.instaeclipse.utils.tracker.FollowIndicatorTracker;
 import ps.reso.instaeclipse.utils.feature.FeatureFlags;
 
 /**
- * Handles the follow-status (follower toast) feature.
- *
- * IGNetworkInterceptor hooks TigonServiceLayer.startRequest and delegates here
- * whenever a /friendships/show/ request is detected. This class owns all the
- * callback registration, response parsing, and toast display logic.
+ * Follower toast. IGNetworkInterceptor delegates here on each /friendships/show/ request;
+ * registers callbacks, parses the response, shows the toast.
  */
 public class FollowStatusHook {
 
@@ -39,9 +36,8 @@ public class FollowStatusHook {
             Collections.synchronizedSet(new HashSet<>());
 
     /**
-     * Entry point called from IGNetworkInterceptor for every TigonServiceLayer request.
-     * If the request is a /friendships/show/ call, captures the userId and registers
-     * response callbacks so the follow status can be parsed when the response arrives.
+     * Called per TigonServiceLayer request. On a /friendships/show/ call, captures the userId
+     * and registers response callbacks to parse follow status when the response arrives.
      */
     public static void handleRequest(URI uri, Object[] args) {
         String path = uri.getPath();
@@ -58,9 +54,8 @@ public class FollowStatusHook {
     }
 
     /**
-     * Lazily hooks all non-static, non-nullary methods of {@code cb}'s class and
-     * stores the identity-hash → userId mapping so we can parse the response when
-     * the callback fires.
+     * Hooks {@code cb}'s non-static, non-nullary methods once per class and maps its
+     * identity-hash → userId, to parse the response when the callback fires.
      */
     private static void registerCallback(Object cb, String userId) {
         if (cb == null) return;
@@ -92,8 +87,7 @@ public class FollowStatusHook {
                             }
                         }
 
-                        // TigonServiceLayer often stores the response body as a field on
-                        // the callback instance rather than passing it as an argument.
+                        // response body is often a field on the callback, not an arg
                         Boolean followedByFromObj = parseFollowedBy(p.thisObject);
                         if (followedByFromObj != null) {
                             sPendingCallbacks.remove(hash);
@@ -107,9 +101,8 @@ public class FollowStatusHook {
     }
 
     /**
-     * Attempts to find and return the "followed_by" boolean from {@code arg},
-     * which may be a String, byte[], or object with a body-accessor method.
-     * Returns null if the argument doesn't contain friendship data.
+     * "followed_by" boolean from {@code arg} (String, byte[], or object holding the body),
+     * or null when it carries no friendship data.
      */
     private static Boolean parseFollowedBy(Object arg) {
         // Depth 3: Callback -> Response Wrapper -> Payload/Body
@@ -123,9 +116,8 @@ public class FollowStatusHook {
     }
 
     /**
-     * Converts {@code obj} to a JSON string containing "followed_by", or null.
-     * Checks the value itself, common accessor methods, and up to 2 levels of
-     * declared fields — covers both arg-based and thisObject-based responses.
+     * {@code obj} as a JSON string containing "followed_by", or null. Checks the value,
+     * accessors, and up to 2 levels of declared fields (arg- and thisObject-based responses).
      */
     private static String toJsonString(Object obj) {
         return toJsonString(obj, 2);
@@ -134,7 +126,6 @@ public class FollowStatusHook {
     private static String toJsonString(Object obj, int depth) {
         if (obj == null || depth < 0) return null;
 
-        // Direct ByteBuffer handling
         if (obj instanceof java.nio.ByteBuffer) {
             try {
                 java.nio.ByteBuffer dup = ((java.nio.ByteBuffer) obj).duplicate();
@@ -152,7 +143,7 @@ public class FollowStatusHook {
             } catch (Throwable ignored) {}
         }
 
-        // Recursive field scanning to find the body inside wrapper objects
+        // scan fields for the body inside wrapper objects
         if (depth > 0) {
             Class<?> cls = obj.getClass();
             while (cls != null && cls != Object.class) {
@@ -188,7 +179,7 @@ public class FollowStatusHook {
                 if (FeatureFlags.showFollowerToast)
                     CustomToast.showCustomToast(ctx, "(" + userId + ") " + statusStr);
 
-                // Clear tracker so we don't process duplicate callback triggers
+                // clear tracker to avoid duplicate callback triggers
                 FollowIndicatorTracker.currentlyViewedUserId = null;
             } catch (Throwable ignored) {}
         });

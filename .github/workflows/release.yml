@@ -127,8 +127,11 @@ jobs:
             fi
             echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           else
-            VERSION_NAME="0.8.$LAST_PATCH-pr.${GITHUB_RUN_NUMBER}"
-            VERSION_CODE=$((19 + LAST_PATCH))
+            # Previews track the installed upstream base, even before our first 0.8.3 tag.
+            PREVIEW_PATCH="$LAST_PATCH"
+            if (( PREVIEW_PATCH < 3 )); then PREVIEW_PATCH=3; fi
+            VERSION_NAME="0.8.$PREVIEW_PATCH-pr.${GITHUB_RUN_NUMBER}"
+            VERSION_CODE=$((18 + PREVIEW_PATCH))
           fi
           {
             echo "VERSION_NAME=$VERSION_NAME"

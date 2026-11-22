@@ -25,13 +25,11 @@ import ps.reso.instaeclipse.utils.feature.FeatureStatusTracker;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Adds a long-press-to-zoom overlay to feed photos (issue #174) so photos can be examined
- * full-screen without navigating away to the post's profile/permalink view — Instagram's
- * classic feed row (com.instagram.feed.widget.IgProgressImageView) has no zoom machinery of
- * its own, so this hook grabs the currently-displayed Drawable and shows it in a
- * self-contained pinch/pan zoom overlay (ZoomableImageView) rather than trying to graft in
- * Instagram's own zoom classes (used for profile-picture/Stories zoom), which are tightly
- * coupled to their own render/animation callbacks.
+ * Long-press-to-zoom overlay for feed photos (#174): examine a photo full-screen without
+ * opening its permalink. Classic feed rows (com.instagram.feed.widget.IgProgressImageView)
+ * have no zoom of their own, so grab the displayed Drawable into a self-contained pinch/pan
+ * overlay (ZoomableImageView) instead of reusing IG's own (profile/Stories) zoom classes,
+ * which are tied to their render/animation callbacks.
  */
 public class FeedPhotoZoomHook {
 
@@ -63,16 +61,11 @@ public class FeedPhotoZoomHook {
             XposedBridge.hookMethod(binding.attach, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
-                    // setOnLongClickListener() has a side effect beyond registering the
-                    // callback: it also flips the view's LONG_CLICKABLE flag, which changes
-                    // Android's internal tap-vs-long-press disambiguation timing for that
-                    // view. Attaching it unconditionally to every IgProgressImageView
-                    // instance app-wide was altering touch dispatch on every image view
-                    // regardless of whether Photo Zoom was even enabled or whether the view
-                    // was actually a feed post — causing intermittent dropped taps on
-                    // story-advance and DM media opens. Gate on BOTH the feature flag and a
-                    // feed-row identity check BEFORE attaching, not just inside the callback,
-                    // so the flag is left untouched everywhere else.
+                    // setOnLongClickListener also flips the view's LONG_CLICKABLE flag, which
+                    // shifts Android's tap-vs-long-press timing. Attaching it to every
+                    // IgProgressImageView app-wide dropped taps on story-advance and DM media,
+                    // so gate on the flag AND a feed-row check before attaching, not in the
+                    // callback, leaving the flag untouched elsewhere.
                     if (!FeatureFlags.enablePhotoZoom) return;
                     try {
                         View view = (View) param.thisObject;
@@ -192,10 +185,9 @@ public class FeedPhotoZoomHook {
         });
     }
 
-    // Instagram's feed image view is backed by a Fresco-style drawable that manages its own
-    // internal scaling and ignores ImageView's matrix/scaleType, so re-drawing the Drawable
-    // directly onto a bare canvas didn't work. Screenshotting the actual View instead captures
-    // exactly what's on screen, regardless of how the underlying drawable renders itself.
+    // The feed image is a Fresco-style drawable that does its own scaling and ignores
+    // ImageView's matrix/scaleType, so drawing the Drawable onto a bare canvas doesn't work.
+    // Draw the View itself to capture what's on screen.
     private static Bitmap viewToBitmap(View v) {
         int w = v.getWidth(), h = v.getHeight();
         if (w <= 0 || h <= 0) return null;

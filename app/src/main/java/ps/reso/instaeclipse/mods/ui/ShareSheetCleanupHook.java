@@ -23,8 +23,8 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
  *
  * Two shapes, both anchored on stable names verified on IG 436 / 447 / 451:
  *  - the plain button, view id {@code direct_private_share_create_group_button}, inside
- *    instagram.features.direct.fragment.sharesheet.DirectShareSheetFragment (constraint child). We
- *    collapse it after onViewCreated and keep it collapsed on later layouts (IG re-shows it when the
+ *    instagram.features.direct.fragment.sharesheet.DirectShareSheetFragment (constraint child).
+ *    Collapsed after onViewCreated and kept collapsed on later layouts (IG re-shows it when the
  *    selection changes) via a coalesced global-layout check scoped to the sheet's view.
  *  - the multi-recipient "create group" facepile variants, inflated from layouts
  *    {@code direct_private_share_create_group_facepile_button/_view}: collapsed as they inflate.

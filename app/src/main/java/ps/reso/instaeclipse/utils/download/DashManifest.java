@@ -51,8 +51,8 @@ final class DashManifest {
             DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
             f.setNamespaceAware(true);
             f.setExpandEntityReferences(false);
-            // Android's XML implementation lacks some JAXP features. DOCTYPE/entity rejection
-            // above is unconditional; this hardening is additional on implementations supporting it.
+            // Android's XML impl lacks some JAXP features; the DOCTYPE/entity rejection above is
+            // unconditional, these are extra hardening where supported.
             try { f.setFeature("http://xml.org/sax/features/external-general-entities", false); } catch (Exception ignored) { }
             try { f.setFeature("http://xml.org/sax/features/external-parameter-entities", false); } catch (Exception ignored) { }
             javax.xml.parsers.DocumentBuilder builder = f.newDocumentBuilder();

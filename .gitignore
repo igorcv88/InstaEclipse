@@ -18,3 +18,7 @@ local.properties
 /app/debug
 /.claude
 /APK
+.mcp.json
+win.xml
+*.hprof
+*.uiautomator.xml

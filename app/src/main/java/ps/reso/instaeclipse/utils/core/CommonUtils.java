@@ -15,6 +15,11 @@ public class CommonUtils {
     public static final String ACTION_REQUEST_LOGS = "ps.reso.instaeclipse.ACTION_REQUEST_LOGS";
     public static final String ACTION_LOGS_REPLY = "ps.reso.instaeclipse.ACTION_LOGS_REPLY";
     public static final String ACTION_CLEAR_LOGS = "ps.reso.instaeclipse.ACTION_CLEAR_LOGS";
+    public static final String ACTION_RESTART = "ps.reso.instaeclipse.ACTION_RESTART";
+    /** Extra on the companion's launch intent: the Instagram package it should relaunch. */
+    public static final String EXTRA_RESTART_IG = "ps.reso.instaeclipse.RESTART_IG";
+    /** The companion (module) app's own package. */
+    public static final String MODULE_PACKAGE = "ps.reso.instaeclipse";
     public static final String EXTRA_LOG_TEXT = "log_text";
     public static final String EXTRA_LOG_SOURCE = "source_package";
     public static final String EXTRA_LOG_ERROR = "error";
@@ -93,6 +98,51 @@ public class CommonUtils {
             e.putLong("__ts_" + key, now).commit();
             intent.putExtra("ts", now);
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Exit the current host (Instagram) process cleanly so the companion can relaunch it. A dying
+     * process cannot bring itself back to the foreground on Android 12+, so the actual relaunch is
+     * always done by the companion (a foreground app) — see {@link #restartViaCompanion} and the
+     * companion's restart handling. This only tears the process down, delayed slightly so the caller
+     * (a broadcast receiver or a menu tap) can return first.
+     */
+    public static void relaunchSelf(Context context) {
+        try {
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                    .postDelayed(() -> Runtime.getRuntime().exit(0), 300);
+        } catch (Throwable t) {
+            ps.reso.instaeclipse.utils.log.ModuleLog.line("(InstaEclipse) relaunchSelf failed: " + t);
+            try { Runtime.getRuntime().exit(0); } catch (Throwable ignored) {}
+        }
+    }
+
+    /**
+     * In-app restart that actually reopens Instagram. A process can't bring itself back to the
+     * foreground after it dies on Android 12+ (background-activity-launch limits), so a dying
+     * Instagram can only land on the launcher. Instead, hand the relaunch to the companion app:
+     * Instagram is in the foreground here, so it may start the companion; the companion, now a
+     * foreground app, relaunches Instagram once this process has exited. Falls back to a best-effort
+     * self-relaunch when the companion can't be started.
+     */
+    public static void restartViaCompanion(Context context) {
+        try {
+            Context app = context.getApplicationContext();
+            String igPkg = app.getPackageName();
+            Intent launch = app.getPackageManager().getLaunchIntentForPackage(MODULE_PACKAGE);
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                launch.putExtra(EXTRA_RESTART_IG, igPkg);
+                // Instagram stays alive here. The companion comes to the foreground, then tells
+                // Instagram to exit (ACTION_RESTART) and relaunches it once it is fully gone — doing
+                // both from here would race the kill against the relaunch and land on a dead task.
+                app.startActivity(launch);
+                return;
+            }
+        } catch (Throwable t) {
+            ps.reso.instaeclipse.utils.log.ModuleLog.line("(InstaEclipse) restartViaCompanion failed: " + t);
+        }
+        relaunchSelf(context); // companion not reachable: best effort (just closes on Android 12+)
     }
 
     /** Sends commands only to an explicitly trusted installed host signing identity. */

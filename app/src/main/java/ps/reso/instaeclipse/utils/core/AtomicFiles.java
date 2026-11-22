@@ -10,10 +10,9 @@ import java.util.concurrent.Executors;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Crash-safe file replacement for the small JSON stores (hidden threads, thread names, unsent
- * log). Content is written to a temp file, synced, then renamed over the target, so a crash
- * mid-write leaves the previous version intact instead of a truncated file that loses
- * everything on the next load. Async writes run in order on one background thread.
+ * Crash-safe replacement for the small JSON stores (hidden threads, thread names, unsent log):
+ * write to a temp file, sync, rename over the target, so a crash mid-write keeps the previous
+ * version instead of a truncated file. Async writes run in order on one background thread.
  */
 public final class AtomicFiles {
 

@@ -18,21 +18,21 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 /**
- * Save a received Instant (#184). "Instants" is internally `quicksnap`, and its viewer is Jetpack
- * Compose (so no button can be injected). An Instant item is the model whose Media lives in field
- * A01; the module's existing downloader understands that Media directly.
+ * Save a received Instant (#184). "Instants" is internally `quicksnap`; its viewer is Jetpack
+ * Compose, so no button can be injected. An Instant item's Media lives in field A01, which the
+ * existing downloader handles directly.
  *
  * Two literal-named Compose classes (stable across obfuscation — Kotlin package names survive):
- *  - QuickSnapMediaViewerScreenKt$QuickSnapMediaViewerScreen$16$1$8$1 — the double-tap coroutine
- *    for the CURRENT card; its constructor receives the current Instant item as arg[6]. We hook
- *    the ctor (after) and cache that item's Media.
+ *  - QuickSnapMediaViewerScreenKt$QuickSnapMediaViewerScreen$16$1$8$1 — double-tap coroutine for
+ *    the CURRENT card; ctor receives the current Instant item as arg[6]. Hook the ctor (after),
+ *    cache that item's Media.
  *  - PointerTouchKt$handleTapAndLongPressWithRelease$2$1$1$1 — the viewer's tap/long-press pointer
- *    handler (package com.instagram.quicksnap.viewer.compose, so it only fires inside the Instant
- *    viewer). Its constructor stores the onLongPress callback (a kotlin Function1) in a field.
- *    We wrap that Function1 so a long-press saves the cached Instant, then still runs IG's original.
+ *    handler (package com.instagram.quicksnap.viewer.compose, fires only inside the Instant viewer).
+ *    Its ctor stores the onLongPress callback (a kotlin Function1) in a field; wrap that Function1
+ *    so a long-press saves the cached Instant, then still runs IG's original.
  *
- * No obfuscated class OR field name is hardcoded: the two hooked classes are literal-named, the
- * Media is found by field type and the long-press callback by constructor-argument order.
+ * No obfuscated class or field name is hardcoded: both hooked classes are literal-named, the Media
+ * is found by field type and the long-press callback by constructor-argument order.
  */
 public class InstantSaveHook {
 
@@ -68,7 +68,10 @@ public class InstantSaveHook {
                     @Override protected void afterHookedMethod(MethodHookParam p) { ps.reso.instaeclipse.utils.core.JitGuard.tick(p.method);
                         try {
                             Object media = findInstantMedia(p.args);
-                            if (media != null) currentMedia = media;
+                            if (media != null) {
+                                currentMedia = media;
+                                if (FeatureFlags.keepInstantHistory) rememberInstant(media);
+                            }
                         } catch (Throwable ignored) {}
                     }
                 });
@@ -119,10 +122,9 @@ public class InstantSaveHook {
     }
 
     /**
-     * Finds the current Instant's Media among the ctor args by FIELD TYPE, not by the obfuscated
-     * field letter — the arg is the Instant item, and its Media lives in the (only) field whose
-     * type is com.instagram.feed.media.Media. This survives field-letter/arg-order drift across
-     * versions (nothing here is hardcoded to "A01"/index 6).
+     * Current Instant's Media found among ctor args by FIELD TYPE, not the obfuscated field letter:
+     * the arg is the Instant item, its Media is the only field of type com.instagram.feed.media.Media.
+     * Survives field-letter/arg-order drift (nothing hardcoded to "A01"/index 6).
      */
     private static Object findInstantMedia(Object[] args) {
         if (args == null) return null;
@@ -142,15 +144,38 @@ public class InstantSaveHook {
         return null;
     }
 
+    private static void rememberInstant(Object media) {
+        final Context ctx = AndroidAppHelper.currentApplication();
+        if (ctx == null) return;
+        FeedVideoDownloadHook.executor.submit(() -> {
+            try {
+                String id = null;
+                try {
+                    Object v = media.getClass().getMethod("getId").invoke(media);
+                    if (v instanceof String s && !s.isEmpty()) id = s;
+                } catch (Throwable ignored) {}
+                if (id == null || ps.reso.instaeclipse.utils.media.InstantHistory.has(id)) return;
+                List<String> urls = FeedVideoDownloadHook.extractAllUrlsFromMedia(ctx, media);
+                if (urls == null || urls.isEmpty()) return;
+                String url = urls.get(0);
+                String author = FeedVideoDownloadHook.extractUsernameFromMediaObject(media);
+                ps.reso.instaeclipse.utils.media.InstantHistory.capture(id, author, url,
+                        FeedVideoDownloadHook.isVideoUrl(url), 0);
+            } catch (Throwable t) {
+                ModuleLog.line("(IE|InstantSave) history capture failed: " + t);
+            }
+        });
+    }
+
     // Debounce so both preloaded viewer instances (and any duplicate invoke) don't double-save.
     private static volatile long lastSaveMs = 0;
 
     /**
-     * Hook the viewer pointer handler and wrap its onLongPress callback (A0A on 452 — verified
-     * on-device: it fires exactly once per gesture at the long-press threshold, while the other
-     * Function1 is the ordinary press/tap callback that fires repeatedly). On long-press we save the
-     * cached Instant, then still run IG's original callback so its own behaviour (pause, etc.) is
-     * preserved. The field is picked by {@link #longPressField}, not by its obfuscated letter.
+     * Wrap the pointer handler's onLongPress callback (A0A on 452 — verified on-device: fires once
+     * per gesture at the long-press threshold, while the other Function1 is the press/tap callback
+     * that fires repeatedly). Long-press saves the cached Instant, then runs IG's original callback
+     * so its behaviour (pause, etc.) is preserved. Field picked by {@link #longPressField}, not its
+     * obfuscated letter.
      */
     private void wrapLongPress(ClassLoader cl) {
         try {
@@ -188,11 +213,11 @@ public class InstantSaveHook {
     private static volatile boolean longPressMissLogged;
 
     /**
-     * The pointer lambda captures (continuation, onPress: Function0, onTap: Function1,
-     * onLongPress: Function1, slop: Float, timeout: Long) — Kotlin keeps capture order in the ctor
-     * (452: p3 -> A0B tap, p4 -> A0A long-press). So the long-press callback is the SECOND
-     * Function1 ctor argument; the field is the Function1 field holding that same instance.
-     * Resolved on the first construction and reused (field letters are fixed for one build).
+     * Pointer lambda captures (continuation, onPress: Function0, onTap: Function1,
+     * onLongPress: Function1, slop: Float, timeout: Long); Kotlin keeps capture order in the ctor
+     * (452: p3 -> A0B tap, p4 -> A0A long-press). Long-press is the SECOND Function1 ctor argument;
+     * the field is the Function1 field holding that same instance. Resolved on first construction
+     * and reused (field letters fixed per build).
      */
     private static java.lang.reflect.Field longPressField(XC_MethodHook.MethodHookParam p, Class<?> function1) {
         java.lang.reflect.Field cached = longPressField;

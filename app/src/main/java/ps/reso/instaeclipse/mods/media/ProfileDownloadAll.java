@@ -22,11 +22,10 @@ import ps.reso.instaeclipse.utils.i18n.I18n;
 import ps.reso.instaeclipse.utils.log.ModuleLog;
 
 /**
- * Download a profile's posts, all of them or the newest N (profile ⋮ menu). The profile page is
- * scrolled with a finger drag, so Instagram fetches each page of the grid itself; the posts' Media
- * models are read from the grid adapter (android:id/list) as they arrive. Then each post goes
- * through the normal downloader (carousels as all their slides), one at a time so the download
- * queue is never flooded.
+ * Download a profile's posts, all or the newest N (profile ⋮ menu). The page is scrolled with a
+ * finger drag so Instagram fetches each grid page itself; the posts' Media models are read from the
+ * grid adapter (android:id/list) as they arrive. Each post then goes through the normal downloader
+ * (carousels as all their slides), one at a time so the download queue is never flooded.
  */
 public final class ProfileDownloadAll {
 
@@ -123,7 +122,7 @@ public final class ProfileDownloadAll {
                     return;
                 }
                 swipeUp(a, grid);
-                MAIN.postDelayed(this, TICK_MS);
+                MAIN.postDelayed(this, ps.reso.instaeclipse.utils.core.Pace.between(TICK_MS, TICK_MS, TICK_MS * 2));
             }
         };
         MAIN.post(tick);
@@ -185,10 +184,10 @@ public final class ProfileDownloadAll {
     }
 
     /**
-     * The grid doesn't scroll on its own: it is laid out at full height inside the profile page,
-     * which scrolls (header first, then the grid). So a finger drag over the grid is played into the
-     * activity's window, one move per frame like a real finger, and Instagram pages in more posts as
-     * it would for the user. Our dialog is a separate window and isn't touched.
+     * The grid doesn't scroll on its own: it's laid out at full height inside the profile page,
+     * which scrolls (header, then grid). A finger drag over the grid is played into the activity's
+     * window, one move per frame like a real finger, and Instagram pages in more posts. The dialog
+     * is a separate window and isn't touched.
      */
     private static void swipeUp(Activity a, View grid) {
         View root = a.getWindow().getDecorView();

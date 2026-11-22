@@ -48,18 +48,17 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
 import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 /**
- * Profile Picture Downloader
+ * Profile picture downloader.
  *
- * Strategy:
- *   Hook View.onAttachedToWindow() globally, filter for "expanded_profile_pic" by resource name
- *   (cached as an int ID after first resolution). When found, attach a long-press listener that
- *   opens the picture full-screen and square (pinch to zoom) with a Download button.
+ * Hook View.onAttachedToWindow() globally, filter for "expanded_profile_pic" by resource name
+ * (cached as an int ID after first resolution), then long-press to open the picture full-screen
+ * and square (pinch to zoom) with a Download button.
  *
- *   Full size: the circle shows a small copy (ImageUrl from IgImageView). The viewed profile's User
- *   (UserDetailFragment -> UserDetailViewModel -> User, tracked on resume) carries the original as
- *   hd_profile_pic_url_info (User ()ProfilePicUrlInfo using that string; ProfilePicUrlInfo keeps a
- *   plain getUrl()). It's used when it is the same picture (same file name as the circle's URL),
- *   otherwise the circle's URL is kept.
+ * The circle shows a small copy (ImageUrl from IgImageView). The viewed profile's User
+ * (UserDetailFragment -> UserDetailViewModel -> User, tracked on resume) carries the original as
+ * hd_profile_pic_url_info (User ()ProfilePicUrlInfo using that string; ProfilePicUrlInfo keeps a
+ * plain getUrl()), used when it is the same picture (same file name as the circle's URL),
+ * otherwise the circle's URL is kept.
  *
  * Gated by FeatureFlags.enableProfileDownload.
  */

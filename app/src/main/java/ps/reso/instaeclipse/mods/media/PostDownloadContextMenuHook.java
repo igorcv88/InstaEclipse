@@ -35,17 +35,16 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 /**
  * Injects a "Download" entry into the feed-post three-dots (⋮) menu.
  *
- * Hook A — static add-button method on MediaOptionsOverflowMenuCreator
- *   Found via DexKit: findClass("MediaOptionsOverflowMenuCreator") → findMethod(declaredClass, void).
- *   Hooks every addButton call; injects our Download entry once per menu popup.
+ * Hook A — static add-button method on MediaOptionsOverflowMenuCreator.
+ *   DexKit: findClass("MediaOptionsOverflowMenuCreator") → findMethod(declaredClass, void).
+ *   Hooks every addButton call; injects the Download entry once per menu popup.
  *
- * Hook B — options click handler
- *   Found via DexKit: void method with sole param MediaOption$Option (stable, unobfuscated type).
- *   Fires on every option tap; we handle DOWNLOAD and trigger the download.
+ * Hook B — options click handler.
+ *   DexKit: void method with sole param MediaOption$Option (stable, unobfuscated type).
+ *   Fires on every option tap; handles DOWNLOAD.
  *
- * Carousel index: read from the first int field on thisObject whose value fits [0, urlCount).
- *   Tries a known field name first (fast path), then falls back to scanning all int fields
- *   so a rename in a future build doesn't break it.
+ * Carousel index: first int field on thisObject whose value fits [0, urlCount).
+ *   Scans all int fields so a field rename in a future build doesn't break it.
  */
 public class PostDownloadContextMenuHook {
 
@@ -57,13 +56,13 @@ public class PostDownloadContextMenuHook {
     private static Class<?> mediaOptionEnumClass;
     private static Object   downloadOptionValue;     // MediaOption$Option.DOWNLOAD
     private static Object   copyLinkOptionValue;     // MediaOption$Option.COPY_LINK (#117)
-    // "Copy image" row (#228). IG has no such option, so the row borrows an internal debug-only
-    // value that never appears in a normal user's menu (present 436 → 452) and gets our label;
-    // its taps are consumed below before IG's handler sees them.
+    // "Copy image" row (#228). IG has no such option, so it borrows an internal debug-only
+    // enum value (present 436 → 452) that never shows in a normal menu; taps are consumed
+    // below before IG's handler sees them.
     private static final String COPY_IMAGE_CARRIER = "EXPLORE_INTERNAL_DEBUG_LOGS";
     private static Object   copyImageOptionValue;
-    // "Media info" (#231) and "Playback speed" (#247) rows: two more internal debug-only values
-    // (present 436 → 452) carry our labels the same way.
+    // "Media info" (#231) and "Playback speed" (#247): two more debug-only values
+    // (present 436 → 452), same trick.
     static final String MEDIA_INFO_CARRIER = "DEBUG_SHOPS_AD";
     static final String SPEED_CARRIER = "PROMOTE_DEBUG";
     private static Object   mediaInfoOptionValue;
@@ -104,7 +103,7 @@ public class PostDownloadContextMenuHook {
         installAllowlistPatchHook(bridge, classLoader);
     }
 
-    // ── Step 1: MediaOption$Option.DOWNLOAD ──────────────────────────────────
+    // ── MediaOption$Option enum values ───────────────────────────────────────
 
     private static void loadMediaOptionEnum(ClassLoader cl) {
         try {
@@ -141,12 +140,12 @@ public class PostDownloadContextMenuHook {
         }
     }
 
-    // ── Step 2: find MediaOptionsOverflowMenuCreator + its add-button method ─
+    // ── Find MediaOptionsOverflowMenuCreator + its add-button method ─────────
     //
-    // Pass 1: findClass by string "MediaOptionsOverflowMenuCreator" (avoids <clinit> crash
-    //         that occurs when calling getMethodInstance() on a <clinit> MethodData).
-    // Pass 2: findMethod(declaredClass, returnType=void) → filter for the static method
-    //         that takes MediaOption$Option + ArrayList as params.
+    // Pass 1: findClass by string "MediaOptionsOverflowMenuCreator" (avoids the <clinit>
+    //         crash from getMethodInstance() on a <clinit> MethodData).
+    // Pass 2: findMethod(declaredClass, returnType=void) → static method taking
+    //         MediaOption$Option + ArrayList.
 
     private static void findCreatorClassAndAddButtonMethod(DexKitBridge bridge,
                                                             ClassLoader classLoader) {
@@ -290,7 +289,7 @@ public class PostDownloadContextMenuHook {
             protected void beforeHookedMethod(MethodHookParam param) { ps.reso.instaeclipse.utils.core.JitGuard.tick(param.method);
                 if (Boolean.TRUE.equals(sAddingDownload.get())) return;
                 Object opt = param.args[idxOption];
-                // Suppress IG's own native rows — we inject our own versions instead
+                // Suppress IG's own native rows; injected versions replace them
                 if (FeatureFlags.enablePostDownload && opt == downloadOptionValue) {
                     param.setResult(null);
                 } else if (FeatureFlags.copyMediaLink && opt == copyLinkOptionValue) {
@@ -318,7 +317,7 @@ public class PostDownloadContextMenuHook {
                 boolean wantCounts = FeatureFlags.postCountSpoof && countsOptionValue != null;
                 if (!wantDownload && !wantCopyLink && !wantCopyImage && !wantInfo && !wantSpeed && !wantCounts) return;
 
-                // Don't react to our own target option types (suppressed in beforeHook)
+                // Skip our own target option types (suppressed in beforeHook)
                 Object opt = param.args[idxOption];
                 if (opt == downloadOptionValue || opt == copyLinkOptionValue
                         || (opt != null && (opt == copyImageOptionValue || opt == mediaInfoOptionValue
@@ -338,7 +337,7 @@ public class PostDownloadContextMenuHook {
                 if (wantInfo) injectRow(param, mediaInfoOptionValue, R.string.ig_media_info_title);
                 if (wantSpeed) injectRow(param, speedOptionValue, R.string.ig_playback_speed_title);
                 if (wantCounts && isOwnPost(self)) injectRow(param, countsOptionValue, R.string.ig_post_counts_title);
-                // Our carriers are debug options Instagram draws with the Meta logo; give them real icons.
+                // Carriers are debug options IG draws with the Meta logo; give them real icons.
                 if (wantCopyImage || wantInfo || wantSpeed || wantCounts) ps.reso.instaeclipse.mods.ui.MenuIcons.fixSoon();
             }
         });
@@ -370,8 +369,8 @@ public class PostDownloadContextMenuHook {
 
     // ── Hook B: click handler ─────────────────────────────────────────────────
     //
-    // DexKit finds void methods with sole param MediaOption$Option — a stable unobfuscated type.
-    // No string constants used, so obfuscation of surrounding code doesn't matter.
+    // DexKit: void methods with sole param MediaOption$Option (stable, unobfuscated).
+    // No string constants, so surrounding obfuscation doesn't matter.
 
     private static Method reelClickDispatcher;
 
@@ -405,9 +404,9 @@ public class PostDownloadContextMenuHook {
             }
         };
 
-        // Cache hit: restore all previously-found click handler methods
-        // (cache key bumped to _v2 — the old key could hold private analytics-only
-        // lookalikes hooked before the public-only filter below was added)
+        // Cache hit: restore all previously-found click handler methods.
+        // (key bumped to _v2 — the old key could hold private analytics-only
+        // lookalikes hooked before the public-only filter below existed)
         if (DexKitCache.isCacheValid()) {
             List<Method> cached = DexKitCache.loadMethods("PostDownload_click_v3", classLoader);
             if (cached != null && !cached.isEmpty()) {
@@ -424,8 +423,8 @@ public class PostDownloadContextMenuHook {
                             .returnType("void")
                             .paramTypes(optionClassName)));
 
-            // Resolve all non-static candidates first so we can decide the private-exclusion
-            // policy from the whole set, rather than filtering as we go.
+            // Collect all non-static candidates first, so the private-exclusion
+            // policy can be decided from the whole set rather than as we go.
             List<Method> candidates = new ArrayList<>();
             for (MethodData md : results) {
                 try {
@@ -435,15 +434,12 @@ public class PostDownloadContextMenuHook {
                 } catch (Throwable ignored) {}
             }
 
-            // Exclude private methods — these are consistently internal analytics/logging
-            // helpers that also receive the tapped option for telemetry (e.g. 5RY.A08 on
-            // the reel menu), not the real click dispatcher (public in every case seen so
-            // far: RAu.A08 for posts, 5RY.A0O for reels). Hooking the private lookalikes
-            // caused duplicate/spurious download triggers. Only apply the exclusion when a
-            // public candidate also exists — on a build where the real dispatcher itself
-            // turns out to be private with no public sibling, skipping it entirely would
-            // just break the feature outright, which is worse than the duplicate-trigger
-            // risk this filter guards against.
+            // Exclude private methods: internal analytics/logging helpers that also receive
+            // the tapped option for telemetry (e.g. 5RY.A08 on the reel menu), not the real
+            // dispatcher (public in every case seen: RAu.A08 posts, 5RY.A0O reels). Hooking
+            // the private lookalikes caused duplicate download triggers. Only exclude when a
+            // public candidate also exists — if the real dispatcher is itself private with no
+            // public sibling, dropping it would break the feature, worse than the duplicates.
             boolean hasPublicCandidate = candidates.stream().anyMatch(m -> Modifier.isPublic(m.getModifiers()));
 
             List<Method> hooked = new ArrayList<>();
@@ -473,13 +469,12 @@ public class PostDownloadContextMenuHook {
 
     // ── Hook C: allowlist patch ─────────────────────────────────────────────────
     //
-    // IG's newer "SimplifiedMediaOverflowBottomSheet" menu filters the button list
-    // down to a hardcoded allowlist of MediaOption$Option values before rendering
-    // (DOWNLOAD isn't one of them), silently dropping our injected entry even though
-    // Hook A added it successfully. Found via DexKit field-usage matching — the
-    // allowlist-builder method is the unique static (boolean)->List method that
-    // references these three particular MediaOption$Option constants together.
-    // We patch its return value to also include DOWNLOAD so our entry survives.
+    // IG's newer "SimplifiedMediaOverflowBottomSheet" menu filters the button list to a
+    // hardcoded allowlist of MediaOption$Option values before rendering (DOWNLOAD isn't
+    // one), dropping the injected entry even though Hook A added it. Found via DexKit
+    // field-usage: the allowlist builder is the unique static (boolean)->List method
+    // referencing these three MediaOption$Option constants together. Patch its return
+    // value to include DOWNLOAD so the entry survives.
 
     private static void installAllowlistPatchHook(DexKitBridge bridge, ClassLoader classLoader) {
         XC_MethodHook allowlistHook = new XC_MethodHook() {
@@ -577,9 +572,9 @@ public class PostDownloadContextMenuHook {
 
             String option = clicked.toString();
             // ReelDownloadHook adds DOWNLOAD to the reel menu (and unlocks IG's native row) when
-            // REEL download is on. If we only consumed the tap for POST download, a reel tap with
-            // only Reel download enabled fell through to Instagram's own save flow, which burns in
-            // a watermark (#256). Route it to the module's clean downloader for either toggle.
+            // Reel download is on. Consuming the tap only for Post download let a reel tap fall
+            // through to IG's own save flow, which burns in a watermark (#256). Route to the
+            // module's clean downloader for either toggle.
             boolean reelMenu = reelClickDispatcher != null && param.method.equals(reelClickDispatcher);
             boolean isDownload = option.equals("DOWNLOAD")
                     && (reelMenu ? FeatureFlags.enableReelDownload : FeatureFlags.enablePostDownload);
@@ -739,13 +734,12 @@ public class PostDownloadContextMenuHook {
     }
 
     /**
-     * Preferred media lookup: reads the click handler's own reference to the menu-creator
-     * (QpF-equivalent) instance and pulls its Media field directly, instead of the generic
-     * BFS in {@link #findMedia}. The generic scan can land on an unrelated Media-typed field
-     * elsewhere in the object graph first (e.g. a hosting Fragment's own "created with" post
-     * reference, which doesn't update as the user navigates between posts within that
-     * Fragment) — the menu-creator's own Media field is always the one that was current
-     * when THIS specific menu was built, so it can't go stale that way.
+     * Preferred media lookup: reads the click handler's own menu-creator (QpF-equivalent)
+     * reference and pulls its Media field directly, rather than the generic BFS in
+     * {@link #findMedia}. The generic scan can land on an unrelated Media field first (e.g. a
+     * hosting Fragment's post reference, which goes stale as the user navigates within that
+     * Fragment); the menu-creator's own Media field is always the one current when this menu
+     * was built.
      */
     private static Object findMediaViaMenuCreator(Object clickHandler) {
         if (clickHandler == null || menuCreatorClass == null) return null;

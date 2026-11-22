@@ -42,33 +42,24 @@ public class CommentCopyHook {
     private static final String CACHE_RESOLVER_KEY = "CommentCopy_Resolver";
 
     // ── Install ───────────────────────────────────────────────────────────────
+    // Newer builds rewrote comments on an MVVM/reducer architecture; the classic
+    // GestureDetector.onLongPress handlers (found via "fb_comment_long_press") become dead
+    // code after migration — the GestureDetector is constructed but never gets touch events.
+    // Try the new mechanism first, keep the old as fallback for un-migrated versions.
     //
-    // Instagram rewrote comments on top of a modern MVVM/reducer architecture in newer builds;
-    // the classic GestureDetector.onLongPress handlers this hook originally targeted (found via
-    // the "fb_comment_long_press" string) become dead code once a build migrates — their
-    // GestureDetector gets constructed but never actually receives touch events (confirmed by
-    // live tracing on a build that had already migrated).
-    // So the new mechanism is tried FIRST, and the old one kept as a fallback for any
-    // Instagram version that hasn't migrated yet — never assume the newer architecture is
-    // universal, always have a path back to what worked before.
-    //
-    // New mechanism: the trigger is Dcq.FmJ(String commentId, String mediaId, float, boolean)
-    // — the concrete implementation of the shared LX/mxm interface. Dcq itself is obfuscated
-    // and renames every build, but it's found without DexKit at all: it's the field on the
-    // stable, non-obfuscated effect-handler class whose type has a method matching that exact
-    // (String,String,float,boolean)V shape.
-    // To get the actual comment MODEL (not just its id), the same repository lookup chain
-    // Dcq.FmJ itself uses is replicated:
-    //   1) Dcq's MediaCommentListRepository-typed field (stable class name, found by reflection)
-    //   2) a field on that repository whose type exposes a public no-arg getValue() (a
-    //      Kotlin State/Lazy-style holder — the method name itself is preserved since it's a
-    //      real SDK interface, so this survives Dcq's own field/class renaming)
-    //   3) the static resolver method (LX/DjK;->A01 in this build) that turns
-    //      (thatValue, commentId, mediaId) into the comment model (LX/EGL;) — found via
-    //      DexKit's addCaller from the already-resolved Dcq.FmJ, so renames of DjK/EGL don't
-    //      break discovery either.
-    // From the resolved model, the comment text is the longest non-trivial String field —
-    // the same heuristic the old mechanism (and other features in this codebase) also use.
+    // New mechanism: trigger is Dcq.FmJ(String commentId, String mediaId, float, boolean), the
+    // concrete impl of the shared LX/mxm interface. Dcq renames every build, but is found
+    // without DexKit: the field on the stable effect-handler class whose type has a method of
+    // that exact (String,String,float,boolean)V shape.
+    // For the comment MODEL (not just id), replicate the repository lookup Dcq.FmJ uses:
+    //   1) Dcq's MediaCommentListRepository-typed field (stable class name, via reflection)
+    //   2) a field on that repo whose type has a public no-arg getValue() (Kotlin State/Lazy
+    //      holder — getValue is a real SDK name, survives Dcq's renaming)
+    //   3) static resolver (LX/DjK;->A01 here) turning (thatValue, commentId, mediaId) into the
+    //      comment model (LX/EGL;) — found via DexKit addCaller from Dcq.FmJ, so DjK/EGL renames
+    //      don't break discovery.
+    // Comment text is the longest non-trivial String field on the model (same heuristic as the
+    // old mechanism and elsewhere).
     private static final String EFFECT_HANDLER_CLASS =
             "com.instagram.comments.mvvm.view.fragment.CommentViewUiEffectHandler$handleCommentUiEffects$1";
     private static final String REPO_CLASS =
@@ -79,7 +70,7 @@ public class CommentCopyHook {
 
     public void install(DexKitBridge bridge, ClassLoader classLoader) {
         ps.reso.instaeclipse.mods.media.CommentMedia.trackCommentSheet(bridge, classLoader);
-        // Track current Activity for showing dialogs
+        // track current Activity for dialogs
         try {
             XposedHelpers.findAndHookMethod(Activity.class, "onResume", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam p) { ps.reso.instaeclipse.utils.core.JitGuard.tick(p.method);
@@ -413,10 +404,9 @@ public class CommentCopyHook {
         return false;
     }
 
-    // Finds a field on `repo` whose type has a public no-arg "getValue" method (a Kotlin
-    // State/Lazy-style holder) that yields an instance of targetType — the repository has
-    // several such holders (loading state, ui state, etc.), so the resolver's own expected
-    // parameter type disambiguates which one is the actual comment cache.
+    // Field on `repo` whose type has a no-arg getValue() (Kotlin State/Lazy holder) yielding
+    // targetType. Repo has several such holders; the resolver's expected param type picks the
+    // comment cache.
     private static Object resolveHeldValue(Object repo, Class<?> targetType) {
         for (java.lang.reflect.Field f : ps.reso.instaeclipse.utils.core.SafeReflect.fields(repo.getClass())) {
             try {

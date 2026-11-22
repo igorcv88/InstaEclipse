@@ -160,6 +160,8 @@ public final class IgColorRemapEngine {
         if (mappedRgb != CACHE_MISS) {
             return (0xFF000000 & color) | (0x00FFFFFF & mappedRgb);
         }
+        // Accent-only recolor never classifies by luminance/hue — a table miss means "leave stock".
+        if (IgThemeEngine.isAccentOnlyMode()) return color;
         SparseIntArray fuzzy = fuzzyCache;
         if (fuzzy != null) {
             int cached = fuzzy.get(color, CACHE_MISS);
@@ -239,6 +241,10 @@ public final class IgColorRemapEngine {
     }
 
     private static void buildTable(Context context) {
+        if (IgThemeEngine.isAccentOnlyMode()) {
+            buildAccentOnlyTable(context);
+            return;
+        }
         SparseIntArray exact = new SparseIntArray(128);
         SparseIntArray rgb = new SparseIntArray(512);
         IgThemePalette palette = IgThemeEngine.getActivePalette();
@@ -266,6 +272,33 @@ public final class IgColorRemapEngine {
         exactTable = exact;
         rgbTable = rgb;
         fuzzyCache = new SparseIntArray(256);
+    }
+
+    /**
+     * Accent-only recolor: map just Instagram's blue accent/button/link source colors to the chosen
+     * accent. Everything else has no table entry and (with fuzzy classification skipped in this mode)
+     * passes through {@link #remap} unchanged, so backgrounds, text and icons stay stock.
+     */
+    private static void buildAccentOnlyTable(Context context) {
+        SparseIntArray exact = new SparseIntArray(64);
+        SparseIntArray rgb = new SparseIntArray(128);
+        int accent = ThemeExtras.accentColor();
+        // The same accent-blue constants mapCanonical assigns to the button / link / accent slots.
+        int[] blues = {-16738826, -15173646, -11903495, -11219201, -16763029, -10960094, -9360, -217321};
+        for (int blue : blues) put(exact, rgb, blue, accent);
+        // Instagram's accent-family color resources (bds_blue_*, primary_button, text_link, …).
+        Resources res = context.getResources();
+        SparseIntArray colorResToSlot = IgThemeEngine.getColorResToSlot();
+        if (colorResToSlot != null) {
+            for (int i = 0; i < colorResToSlot.size(); i++) {
+                if (!IgThemeEngine.isAccentSlot(colorResToSlot.valueAt(i))) continue;
+                int original = sampleColor(res, colorResToSlot.keyAt(i));
+                if (original != 0) put(exact, rgb, original, accent);
+            }
+        }
+        exactTable = exact;
+        rgbTable = rgb;
+        fuzzyCache = new SparseIntArray(64);
     }
 
     private static void mapAllResourceColors(SparseIntArray exact, SparseIntArray rgb, Resources res, ClassLoader cl, IgThemePalette palette) {

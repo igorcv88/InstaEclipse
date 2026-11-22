@@ -26,10 +26,10 @@ import ps.reso.instaeclipse.utils.log.ModuleLog;
  * Download a post/reel from a link shared to InstaEclipse in another app (#236).
  *
  * The companion app's share target ({@code ShareDownloadActivity}) opens the link in Instagram
- * with {@link #EXTRA}. Here, once Instagram has loaded that post into its session MediaCache, its
- * media is saved with the module's downloader and Instagram is sent to the background, so the
- * user lands back in the app they shared from. (A silent fetch without the UI would need the
- * module to make authenticated API calls of its own.)
+ * with {@link #EXTRA}. Once Instagram loads the post into its session MediaCache, the media is
+ * saved with the module's downloader and Instagram is backgrounded, so the user lands back in
+ * the app they shared from. (A silent fetch without the UI would need the module's own
+ * authenticated API calls.)
  */
 public class ShareLinkDownloadHook {
     public static final String EXTRA = "ps.reso.instaeclipse.SHARE_DOWNLOAD";
@@ -44,7 +44,7 @@ public class ShareLinkDownloadHook {
     private static String pendingPk;
 
     public void install(ClassLoader cl) {
-        // The session: UserSession is built once per login/restore (cold, unlike MediaCache lookups).
+        // UserSession is built once per login/restore (cold, unlike MediaCache lookups).
         try {
             XposedBridge.hookAllConstructors(XposedHelpers.findClass("com.instagram.common.session.UserSession", cl), new XC_MethodHook() {
                 @Override

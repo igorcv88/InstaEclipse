@@ -155,17 +155,14 @@ public class ReelDownloadHook {
 
     // ── Reduced options-list patch ──────────────────────────────────────────────
     //
-    // IG's newer, simplified reel overflow menu builds its option list via one
-    // method that returns a plain ArrayList<MediaOption$Option> (SAVE/UNSAVE,
-    // PLAYBACK_CONTROLS, WHY_AM_I_SEEING_THIS, INTERESTED, NOT_INTERESTED,
-    // TAG_OPTIONS, REPORT, REQUEST_COMMUNITY_NOTE, DEBUG_STICKER_TRANSLATION) —
-    // DOWNLOAD was dropped entirely from this list, unlike the older/fuller
-    // overflow-menu code path. Found via field-usage matching on two of its
-    // distinctive enum references. Appending DOWNLOAD to the returned (mutable)
-    // ArrayList lets it flow through the same generic per-option row builder
-    // (LX/5RY;->A0Q -> LX/QIy;->A04) used for every other option here — same
-    // shared row primitive the post menu uses, so PostDownloadContextMenuHook's
-    // app-wide click-handler hook already covers whatever dispatches its click.
+    // IG's newer reel overflow menu builds its option list via one method returning a plain
+    // ArrayList<MediaOption$Option> (SAVE/UNSAVE, PLAYBACK_CONTROLS, WHY_AM_I_SEEING_THIS,
+    // INTERESTED, NOT_INTERESTED, TAG_OPTIONS, REPORT, REQUEST_COMMUNITY_NOTE,
+    // DEBUG_STICKER_TRANSLATION) — DOWNLOAD dropped entirely, unlike the fuller overflow path.
+    // Found via field-usage matching on two of its enum refs. Appending DOWNLOAD to the returned
+    // mutable ArrayList routes it through the same per-option row builder
+    // (LX/5RY;->A0Q -> LX/QIy;->A04) the post menu uses, so PostDownloadContextMenuHook's
+    // click-handler hook already covers its click.
     private static void installReduceOptionsListPatch(DexKitBridge bridge, ClassLoader classLoader) {
         try {
             Object downloadOption = null, copyLinkOption = null, infoOption = null, speedOption = null;
@@ -245,14 +242,13 @@ public class ReelDownloadHook {
 
     // ── Native download-row unlock ──────────────────────────────────────────────
     //
-    // IG 437+ moved the reel overflow menu to the same shared row-builder (QIy) used
-    // by the post menu, and it already has a fully-working, native DOWNLOAD row —
-    // gated behind two eligibility checks (a "can this media be downloaded" gate and
-    // a "is the viewer restricted" gate). When both pass, native code adds the row
-    // via the same QIy.A04 primitive posts use, with a working click handler already
-    // wired to Instagram's own save-to-camera-roll flow. Bypassing the two gates is
-    // far simpler and more robust than reconstructing that row/click machinery
-    // ourselves. Found via each gate's distinct hardcoded MobileConfig param ID.
+    // IG 437+ moved the reel overflow menu to the shared row-builder (QIy) the post menu
+    // uses, which already has a native DOWNLOAD row gated behind two eligibility checks
+    // (a "can this media be downloaded" gate and an "is the viewer restricted" gate). When
+    // both pass, native code adds the row via the same QIy.A04 primitive posts use, with a
+    // click handler wired to Instagram's own save-to-camera-roll flow. Bypassing the gates
+    // beats reconstructing that row/click machinery. Found via each gate's distinct hardcoded
+    // MobileConfig param ID.
     private static void installNativeDownloadGateUnlock(DexKitBridge bridge, ClassLoader classLoader) {
         // "Can this media be downloaded" — force true.
         installGateHook(bridge, classLoader, "ReelDownloadGate_eligible",
@@ -391,11 +387,9 @@ public class ReelDownloadHook {
      * Primary index resolver: walks the activity's live view hierarchy for a
      * ViewPager / ViewPager2 / ReboundViewPager / horizontal RecyclerView whose adapter
      * item count equals {@code carouselSize} and returns its current data index.
-     * Multiple unrelated carousels can coincidentally share the same item count (e.g.
-     * two feed posts both showing 4 photos) — trusting the first DFS hit in that case
-     * previously misattributed the index to the wrong post. So every match is collected
-     * and the result is only trusted when exactly one candidate matches; otherwise the
-     * caller falls back to the data-layer field.
+     * Unrelated carousels can share an item count (e.g. two feed posts of 4 photos), so the
+     * first DFS hit can be the wrong post; every match is collected and trusted only when
+     * exactly one matches, else the caller falls back to the data-layer field.
      *
      * @return current position [0, carouselSize), or -1 if not found / ambiguous
      */

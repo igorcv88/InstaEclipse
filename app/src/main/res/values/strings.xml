@@ -615,12 +615,12 @@
     <string name="ig_dialog_downloader_dm_media">Download DM Photos &amp; Videos (long-press)</string>
     <string name="ig_dialog_misc_viewer_search">Search Your Story Viewers</string>
     <string name="ig_viewer_search_hint">Search viewers</string>
-    <string name="ig_viewer_sort_control_original">Sort: Instagram</string>
-    <string name="ig_viewer_sort_control_az">Sort: A–Z</string>
-    <string name="ig_viewer_sort_control_za">Sort: Z–A</string>
-    <string name="ig_viewer_sort_menu_original">Instagram order</string>
-    <string name="ig_viewer_sort_menu_az">Name (A–Z)</string>
-    <string name="ig_viewer_sort_menu_za">Name (Z–A)</string>
+    <string name="ig_viewer_sort_control_original" tools:ignore="MissingTranslation">Sort: Instagram</string>
+    <string name="ig_viewer_sort_control_az" tools:ignore="MissingTranslation">Sort: A–Z</string>
+    <string name="ig_viewer_sort_control_za" tools:ignore="MissingTranslation">Sort: Z–A</string>
+    <string name="ig_viewer_sort_menu_original" tools:ignore="MissingTranslation">Instagram order</string>
+    <string name="ig_viewer_sort_menu_az" tools:ignore="MissingTranslation">Name (A–Z)</string>
+    <string name="ig_viewer_sort_menu_za" tools:ignore="MissingTranslation">Name (Z–A)</string>
     <string name="ig_dialog_misc_comment_search">Search Comments</string>
     <string name="ig_comment_search">Search comments</string>
     <string name="ig_comment_search_hint">Search %1$d loaded comments</string>

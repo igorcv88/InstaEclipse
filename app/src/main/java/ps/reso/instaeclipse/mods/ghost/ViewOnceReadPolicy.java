@@ -12,7 +12,10 @@ public final class ViewOnceReadPolicy {
     public static boolean blocksPath(String path) {
         if (path == null) return false;
         // Replay endpoints are independent of normal "mark thread seen" processing.
-        if (path.endsWith("/item_replayed/")) return true;
+        if (path.endsWith("/item_replayed/")) {
+            return path.startsWith("/api/v1/direct_v2/threads/")
+                    || path.startsWith("/api/v1/direct_v2/visual_threads/");
+        }
 
         // Seen/opened operations must belong to an explicitly visual thread.
         return path.contains("/direct_v2/visual_threads/")

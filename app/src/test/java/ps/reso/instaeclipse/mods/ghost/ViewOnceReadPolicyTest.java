@@ -16,6 +16,12 @@ public class ViewOnceReadPolicyTest {
         assertTrue(ViewOnceReadPolicy.blocksPath("/api/v1/direct_v2/visual_threads/123/item_replayed/"));
     }
 
+    @Test public void replayOutsideDirectNeverBlocked() {
+        assertFalse(ViewOnceReadPolicy.blocksPath("/api/v1/media/123/item_replayed/"));
+        assertFalse(ViewOnceReadPolicy.blocksPath("/api/v1/other/direct_v2/threads/123/item_replayed/"));
+        assertTrue(ViewOnceReadPolicy.blocksPath("/api/v1/direct_v2/threads/123/item_replayed/"));
+    }
+
     @Test public void ordinaryThreadSeenNeverBlocked() {
         assertFalse(ViewOnceReadPolicy.blocksPath("/api/v1/direct_v2/threads/123/item_seen/"));
         assertFalse(ViewOnceReadPolicy.blocksPath("/api/v1/direct_v2/threads/123/opened/"));

@@ -20,7 +20,8 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 public class GhostViewOnceHook {
 
-    private static final String CACHE_KEY = "GhostViewOnce_v2";
+    // v2 could cache the shared DM seen executor alongside the visual reporters.
+    private static final String CACHE_KEY = "GhostViewOnce_v3";
 
     public void handleViewOnceBlock(DexKitBridge bridge) {
         if (DexKitCache.isCacheValid()) {
@@ -49,7 +50,10 @@ public class GhostViewOnceHook {
                     .usingStrings("visual_item_seen")), hooked);
         }
 
-        collectItemSeen(bridge, hooked);
+        // Do not hook the shared IGDirectItemSeenMutation/xig_direct_item_seen executor:
+        // normal DM read receipts use it too. Blocking that shared executor makes
+        // unrelated conversations unread again after a process restart.
+        // Visual-only reporter anchors above are the safe interception points.
 
         if (hooked.isEmpty()) {
             ModuleLog.line("(InstaEclipse | ViewOnce): ❌ No view-once seen-reporter method found");
@@ -59,29 +63,9 @@ public class GhostViewOnceHook {
         FeatureStatusTracker.setHooked("GhostViewOnce");
     }
 
-    /** The seen mutation sent for disappearing messages. */
-    private void collectItemSeen(DexKitBridge bridge, List<Method> hooked) {
-        try {
-            for (MethodData method : DexKitQueryCache.findMethod(bridge, FindMethod.create().matcher(
-                    MethodMatcher.create().usingStrings("IGDirectItemSeenMutation", "xig_direct_item_seen")))) {
-                if (!String.valueOf(method.getReturnType()).contains("void")) continue;
-                try {
-                    Method m = method.getMethodInstance(Module.hostClassLoader);
-                    if (hooked.contains(m)) continue;
-                    XposedBridge.hookMethod(m, buildViewOnceHook());
-                    hooked.add(m);
-                    ModuleLog.line("(InstaEclipse | ViewOnce): ✅ Hooked item seen "
-                            + method.getClassName() + "." + method.getName());
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable e) {
-            ModuleLog.line("(InstaEclipse | ViewOnce): ❌ " + e.getMessage());
-        }
-    }
-
     /**
-     * Hooks every (3-param, void) reporter the query finds. Both anchors resolve to a visual-only
-     * "report seen" handler, so unconditional setResult(null) is safe.
+     * Hooks reporter methods found using view-once-specific anchors only.
+     * Never match the shared normal-DM seen mutation by its generic request name.
      */
     private void collect(DexKitBridge bridge, FindMethod query, List<Method> hooked) {
         try {

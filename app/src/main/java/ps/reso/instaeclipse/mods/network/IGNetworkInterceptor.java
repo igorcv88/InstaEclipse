@@ -265,9 +265,11 @@ public class IGNetworkInterceptor {
                                         shouldDrop |= uri.getPath().endsWith("/screenshot/") || uri.getPath().endsWith("/ephemeral_screenshot/");
                                     }
                                     if (FeatureFlags.isGhostViewOnce) {
-                                        shouldDrop |= uri.getPath().endsWith("/item_replayed/");
-                                        shouldDrop |= (uri.getPath().contains("/direct") && uri.getPath().endsWith("/item_seen/"));
-                                        shouldDrop |= uri.getPath().contains("/visual_threads/") && uri.getPath().endsWith("/seen/");
+                                        // Limit visual-media seen suppression to visual_threads.
+                                        // Plain /direct_v2/threads/.../item_seen/ is also used for
+                                        // ordinary DM reading and must not be discarded.
+                                        shouldDrop |= ps.reso.instaeclipse.mods.ghost.ViewOnceReadPolicy
+                                                .blocksPath(uri.getPath());
                                     }
                                     if (FeatureFlags.isGhostStory) {
                                         // Version-agnostic: getPath() excludes the ?reel=... query, so it

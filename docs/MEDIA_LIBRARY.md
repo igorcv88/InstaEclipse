@@ -24,7 +24,7 @@ No Android 10 ou superior, exportar cria uma cópia explícita em `DCIM/Instagra
 
 O atalho do Direct é opt-in e usa o menu existente da conversa. `CurrentConversation` confirma o escopo antes da solicitação e novamente antes de abrir a tela. O provider confere o UID e o pacote por meio da autenticação existente em `IpcSecurity`. Apenas o escopo da conversa cruza a fronteira. A atividade de entrada confere uma capacidade de 60 segundos, de uso único, e abre uma atividade privada. As contas do Instagram compartilham UID e o Android autentica o pacote. A conta vem da conversa ativa revalidada pelo módulo.
 
-A galeria própria funciona como fallback para o Direct 454. A apresentação de miniaturas nos balões e uma aba dentro da galeria nativa exigem evidência em execução do componente e da identidade por mensagem. A galeria própria aceita vínculos com a conversa independentemente dessas integrações. O módulo não infere um vínculo por timestamp, nome de arquivo ou posição visual.
+A galeria própria funciona como fallback para o Direct 454. A [integração experimental da etapa 2](MEDIA_LIBRARY_DIRECT_454.md) documenta o menu de mensagem, o atalho em mídias compartilhadas e a importação de uma pasta extraída. A apresentação de miniaturas nos balões e uma aba dentro da galeria nativa exigem evidência em execução do componente e da identidade por mensagem. A galeria própria aceita vínculos com a conversa independentemente dessas integrações. O módulo não infere um vínculo por timestamp, nome de arquivo ou posição visual.
 
 ## Backup explícito
 

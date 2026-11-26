@@ -55,4 +55,15 @@
         <item quantity="one">Import %1$d selected file for offline access?</item>
         <item quantity="other">Import %1$d selected files for offline access?</item>
     </plurals>
+    <string name="media_library_message_title">Message media</string>
+    <string name="media_library_message_offer">Open the local library for this message. You can link a file you choose or open an existing copy.</string>
+    <string name="media_library_associate_message">Link a library item to this message</string>
+    <string name="media_library_import_folder">Import an export folder</string>
+    <string name="media_library_export_discovered">Inspected: %1$d · Photo and video candidates: %2$d · Skipped: %3$d\nCoverage is limited to this folder.</string>
+    <string name="media_library_export_empty">No photo or video candidates in this folder.</string>
+    <string name="media_library_last_report">Last completed import</string>
+    <string name="media_library_no_report">No completed import report for this selection.</string>
+    <string name="media_library_coverage">Processed %1$d of %2$d candidates · Copied: %3$d · Already present: %4$d · Failed: %5$d · Without message link: %6$d\nInspected during discovery: %7$d · Skipped: %8$d\nThis report covers only the selected input.</string>
+    <string name="media_library_pending_import">Resume a Direct import</string>
+    <string name="media_library_no_pending_import">No paused Direct import.</string>
 </resources>

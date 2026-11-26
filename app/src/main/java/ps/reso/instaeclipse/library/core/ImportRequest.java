@@ -29,6 +29,12 @@ public final class ImportRequest {
         return new ImportRequest(packageName, accountKey, threadKey, null, false, 0, "imported", null);
     }
 
+    public static ImportRequest forMessage(String packageName, String accountKey, String threadKey,
+                                           String messageKey, boolean fromMe) {
+        if (!validKey(messageKey)) throw new IllegalArgumentException("Invalid message key");
+        return new ImportRequest(packageName, accountKey, threadKey, messageKey, fromMe, 0, "normal", null);
+    }
+
     void validate() throws LibraryException {
         boolean local = LOCAL_PACKAGE.equals(packageName) && LOCAL_ACCOUNT.equals(accountKey);
         boolean scoped = "com.instagram.android".equals(packageName) && validKey(accountKey) && validKey(threadKey);

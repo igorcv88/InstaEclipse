@@ -20,4 +20,14 @@ public final class GalleryAccessTest {
         assertNull(GalleryAccess.redeem(GalleryAccess.issue(grant), 100L + GalleryAccess.TTL_MS));
         assertNull(GalleryAccess.redeem(GalleryAccess.issue(grant), 99L));
     }
+    @Test public void aMessageGrantReturnsOnlyItsOriginalBinding() {
+        String token = GalleryAccess.issue(new GalleryAccess.Grant("com.instagram.android", "123", "456",
+                "789", true, 200L));
+        GalleryAccess.Grant grant = GalleryAccess.redeem(token, 201L);
+        assertEquals("123", grant.accountKey);
+        assertEquals("456", grant.threadKey);
+        assertEquals("789", grant.messageKey);
+        assertTrue(grant.fromMe);
+        assertNull(GalleryAccess.redeem(token, 202L));
+    }
 }

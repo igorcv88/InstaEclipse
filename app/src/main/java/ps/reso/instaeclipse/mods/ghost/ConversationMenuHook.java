@@ -2,9 +2,8 @@ package ps.reso.instaeclipse.mods.ghost;
 
 import android.app.Activity;
 import android.app.Dialog;
-import android.content.Intent;
-import android.os.Bundle;
-import ps.reso.instaeclipse.library.android.ConversationGalleryProvider;
+import ps.reso.instaeclipse.library.android.DirectGalleryLauncher;
+import ps.reso.instaeclipse.library.core.ImportRequest;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.view.View;
@@ -37,10 +36,6 @@ public final class ConversationMenuHook {
     private static final Map<Activity, Registration> registrations = new WeakHashMap<>();
     private static final Map<View, WeakReference<Registration>> titles = new WeakHashMap<>();
     private static boolean installed;
-    private static final java.util.concurrent.Executor GALLERY_REQUESTS =
-            new java.util.concurrent.ThreadPoolExecutor(1, 1, 0, java.util.concurrent.TimeUnit.SECONDS,
-                    new java.util.concurrent.ArrayBlockingQueue<>(4),
-                    task -> new Thread(task, "ie-conversation-gallery"));
     private static WeakReference<Dialog> openDialog = new WeakReference<>(null);
 
     public static synchronized void install() {
@@ -225,40 +220,9 @@ public final class ConversationMenuHook {
             message(activity, R.string.ie_chat_changed);
             return;
         }
-        Bundle scope = new Bundle();
-        scope.putString(ConversationGalleryProvider.ACCOUNT, snapshot.accountId);
-        scope.putString(ConversationGalleryProvider.THREAD, snapshot.threadId);
-        try {
-            GALLERY_REQUESTS.execute(() -> {
-                String token = null;
-                try {
-                    Bundle reply = activity.getContentResolver().call(
-                            ConversationGalleryProvider.URI, "gallery", null, scope);
-                    if (reply != null) token = reply.getString(ConversationGalleryProvider.TOKEN);
-                } catch (RuntimeException ignored) {
-                    // The companion may be missing, or access may be disabled.
-                }
-                String capability = token;
-                activity.runOnUiThread(() -> openScopedGallery(activity, snapshot, capability));
-            });
-        } catch (java.util.concurrent.RejectedExecutionException busy) {
-            message(activity, R.string.media_library_scope_unavailable);
-        }
-    }
-
-    private static void openScopedGallery(Activity activity, CurrentConversation.Snapshot snapshot, String token) {
-        if (!FeatureFlags.directMediaLibrary || !CurrentConversation.revalidate(activity, snapshot)) return;
-        if (token != null) {
-            try {
-                activity.startActivity(new Intent().setClassName("ps.reso.instaeclipse",
-                        "ps.reso.instaeclipse.library.ui.ConversationGalleryEntry")
-                        .putExtra(ConversationGalleryProvider.TOKEN, token));
-                return;
-            } catch (RuntimeException unavailable) {
-                // The companion activity is unavailable.
-            }
-        }
-        message(activity, R.string.media_library_scope_unavailable);
+        DirectGalleryLauncher.open(activity, ImportRequest.forConversation(activity.getPackageName(),
+                snapshot.accountId, snapshot.threadId), () -> FeatureFlags.directMediaLibrary
+                        && CurrentConversation.revalidate(activity, snapshot));
     }
 
     public static void show(Activity a) {

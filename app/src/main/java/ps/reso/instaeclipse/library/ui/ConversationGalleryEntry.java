@@ -18,7 +18,9 @@ public final class ConversationGalleryEntry extends Activity {
             startActivity(new Intent(this, MediaLibraryActivity.class)
                     .putExtra(ConversationGalleryProvider.PACKAGE, grant.packageName)
                     .putExtra(ConversationGalleryProvider.ACCOUNT, grant.accountKey)
-                    .putExtra(ConversationGalleryProvider.THREAD, grant.threadKey));
+                    .putExtra(ConversationGalleryProvider.THREAD, grant.threadKey)
+                    .putExtra(ConversationGalleryProvider.MESSAGE, grant.messageKey)
+                    .putExtra(ConversationGalleryProvider.FROM_ME, grant.fromMe));
         }
         finish();
     }

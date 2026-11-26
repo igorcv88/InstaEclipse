@@ -38,6 +38,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import ps.reso.instaeclipse.R;
 import ps.reso.instaeclipse.library.android.ConversationGalleryProvider;
 import ps.reso.instaeclipse.library.android.GallerySaver;
+import ps.reso.instaeclipse.library.android.ExportFolder;
+import ps.reso.instaeclipse.library.core.BatchCoverage;
 import ps.reso.instaeclipse.library.android.ImportBatch;
 import ps.reso.instaeclipse.library.android.MediaLibraryRuntime;
 import ps.reso.instaeclipse.library.core.ImportRequest;
@@ -51,7 +53,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(12), command -> new Thread(command, "ie-library-io"));
 
-    private static final int PICK = 501, EXPORT = 502, BACKUP = 503, RESTORE = 504;
+    private static final int PICK = 501, EXPORT = 502, BACKUP = 503, RESTORE = 504, PICK_EXPORT_FOLDER = 505;
     private final AtomicBoolean paused = new AtomicBoolean();
     private ImportRequest scope;
     private ImportBatch batch;
@@ -66,19 +68,24 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         String thread = getIntent().getStringExtra(ConversationGalleryProvider.THREAD);
-        if (thread != null && !ConversationGalleryProvider.enabled(this)) {
+        if (thread != null && !getIntent().getBooleanExtra("resume_from_companion", false)
+                && !ConversationGalleryProvider.enabled(this)) {
             finish();
             return;
         }
-        scope = thread == null ? ImportRequest.localFile() : ImportRequest.forConversation(
-                getIntent().getStringExtra(ConversationGalleryProvider.PACKAGE),
-                getIntent().getStringExtra(ConversationGalleryProvider.ACCOUNT), thread);
+        String message = getIntent().getStringExtra(ConversationGalleryProvider.MESSAGE);
+        String pkg = getIntent().getStringExtra(ConversationGalleryProvider.PACKAGE);
+        String account = getIntent().getStringExtra(ConversationGalleryProvider.ACCOUNT);
+        if (thread == null) scope = ImportRequest.localFile();
+        else if (message == null) scope = ImportRequest.forConversation(pkg, account, thread);
+        else scope = ImportRequest.forMessage(pkg, account, thread, message,
+                getIntent().getBooleanExtra(ConversationGalleryProvider.FROM_ME, false));
         if (state != null) {
             trash = state.getBoolean("trash");
             exportUuid = state.getString("exportUuid");
         }
         batch = new ImportBatch(getApplicationContext());
-        setTitle(scoped() ? R.string.media_library_chat_title : R.string.media_library_title);
+        setTitle(libraryTitle());
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -124,7 +131,8 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
 
     @Override protected void onRestart() {
         super.onRestart();
-        if (scoped() && !ConversationGalleryProvider.enabled(this)) {
+        if (scoped() && !getIntent().getBooleanExtra("resume_from_companion", false)
+                && !ConversationGalleryProvider.enabled(this)) {
             finish();
         } else if (library != null && !busy) {
             work(() -> {}, false);
@@ -153,7 +161,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     private void pickMedia() {
         Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"})
-                .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, scope.messageKey == null);
         launch(picker, PICK);
     }
 
@@ -177,7 +185,24 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
 
     private void handlePickerResult(int request, Intent data) {
         Uri uri = data.getData();
-        if (request == PICK) {
+        if (request == PICK_EXPORT_FOLDER && uri != null && scope.messageKey == null) {
+            work(() -> {
+                ExportFolder.Selection discovered = ExportFolder.discover(getContentResolver(), uri);
+                post(() -> {
+                    if (discovered.candidates().isEmpty()) {
+                        detail(getString(R.string.media_library_export_empty));
+                        return;
+                    }
+                    String preview = getString(R.string.media_library_export_discovered,
+                            discovered.visited(), discovered.candidates().size(), discovered.skipped());
+                    new AlertDialog.Builder(this).setTitle(R.string.media_library_import_folder)
+                            .setMessage(preview)
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(R.string.media_library_import,
+                                    (dialog, which) -> runBatch(null, discovered)).show();
+                });
+            }, false);
+        } else if (request == PICK) {
             LinkedHashSet<Uri> selected = new LinkedHashSet<>();
             if (uri != null) selected.add(uri);
             if (data.getClipData() != null) {
@@ -186,7 +211,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
                     if (item != null) selected.add(item);
                 }
             }
-            if (selected.isEmpty() || selected.size() > ImportBatch.MAX_SELECTION) {
+            if (selected.isEmpty() || selected.size() > (scope.messageKey == null ? ImportBatch.MAX_SELECTION : 1)) {
                 toast(R.string.media_library_selection_limit);
                 return;
             }
@@ -232,22 +257,36 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     }
 
     private void runBatch(List<Uri> selected) {
+        runBatch(selected, null);
+    }
+
+    private void runBatch(List<Uri> selected, ExportFolder.Selection export) {
         paused.set(false);
         work(() -> {
             if (selected != null) batch.select(scope, selected);
-            List<String> results = batch.run(library, scope, paused::get,
+            if (export != null) batch.selectExport(scope, export);
+            ImportBatch.Result result = batch.run(library, scope, paused::get,
                     count -> post(() -> status.setText(getString(R.string.media_library_progress, count))));
-            post(() -> {
-                StringBuilder summary = new StringBuilder();
-                for (int i = 0; i < results.size(); i++) {
-                    summary.append(getString(R.string.media_library_result, i + 1, resultLabel(results.get(i))))
-                            .append('\n');
-                }
-                if (paused.get()) summary.append(getString(R.string.media_library_paused));
-                new AlertDialog.Builder(this).setTitle(R.string.media_library_import)
-                        .setMessage(summary.toString().trim()).setPositiveButton(android.R.string.ok, null).show();
-            });
+            post(() -> showCoverage(result));
         }, true);
+    }
+
+    private void showCoverage(ImportBatch.Result result) {
+        BatchCoverage coverage = result.coverage();
+        StringBuilder summary = new StringBuilder(getString(R.string.media_library_coverage,
+                coverage.processed(), coverage.candidates(), coverage.copied(), coverage.alreadyPresent(),
+                coverage.failed(), coverage.unknownMessage(), coverage.visited(), coverage.skipped()));
+        int listed = 0;
+        for (int i = 0; i < result.outcomes().size() && listed < 20; i++) {
+            String outcome = result.outcomes().get(i);
+            if (outcome.equals("CREATED") || outcome.equals("DEDUPLICATED") || outcome.equals("REPAIRED")
+                    || outcome.equals("ALREADY_PRESENT")) continue;
+            listed++;
+            summary.append('\n').append(getString(R.string.media_library_result, i + 1, resultLabel(outcome)));
+        }
+        if (!coverage.complete()) summary.append('\n').append(getString(R.string.media_library_paused));
+        new AlertDialog.Builder(this).setTitle(R.string.media_library_import)
+                .setMessage(summary.toString()).setPositiveButton(android.R.string.ok, null).show();
     }
 
     private String resultLabel(String result) {
@@ -261,7 +300,8 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     private void showManagement() {
         List<Choice> options = new ArrayList<>();
         if (scoped()) {
-            options.add(new Choice(R.string.media_library_associate, this::associate));
+            options.add(new Choice(scope.messageKey == null ? R.string.media_library_associate
+                    : R.string.media_library_associate_message, this::associate));
         } else {
             options.add(new Choice(trash ? R.string.media_library_title : R.string.media_library_trash, () -> {
                 trash = !trash;
@@ -274,6 +314,35 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
             options.add(new Choice(R.string.media_library_restore_backup, () ->
                     document(Intent.ACTION_OPEN_DOCUMENT, "*/*", null, RESTORE)));
         }
+        if (!scoped() && !pending) {
+            options.add(new Choice(R.string.media_library_pending_import, () -> work(() -> {
+                ImportRequest saved = batch.pendingScope();
+                post(() -> {
+                    if (saved == null || saved.threadKey.isEmpty()) {
+                        detail(getString(R.string.media_library_no_pending_import));
+                        return;
+                    }
+                    startActivity(new Intent(this, MediaLibraryActivity.class)
+                            .putExtra("resume_from_companion", true)
+                            .putExtra(ConversationGalleryProvider.PACKAGE, saved.packageName)
+                            .putExtra(ConversationGalleryProvider.ACCOUNT, saved.accountKey)
+                            .putExtra(ConversationGalleryProvider.THREAD, saved.threadKey)
+                            .putExtra(ConversationGalleryProvider.MESSAGE, saved.messageKey)
+                            .putExtra(ConversationGalleryProvider.FROM_ME, saved.fromMe));
+                });
+            }, false)));
+        }
+        if (!pending && !trash && scope.messageKey == null) {
+            options.add(new Choice(R.string.media_library_import_folder,
+                    () -> launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_EXPORT_FOLDER)));
+        }
+        options.add(new Choice(R.string.media_library_last_report, () -> work(() -> {
+            ImportBatch.Result result = batch.last(scope);
+            post(() -> {
+                if (result == null) detail(getString(R.string.media_library_no_report));
+                else showCoverage(result);
+            });
+        }, false)));
         if (pending) options.add(new Choice(R.string.media_library_discard_import, () ->
                 new AlertDialog.Builder(this).setMessage(R.string.media_library_discard_import_confirm)
                         .setNegativeButton(android.R.string.cancel, null)
@@ -286,7 +355,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
         work(() -> {
             List<LibraryItem> candidates = new ArrayList<>();
             for (LibraryItem item : library.listAll(false)) {
-                if (item.threadKey.isEmpty() && item.isAvailable()) candidates.add(item);
+                if (MediaLibrary.isEligibleForAssociation(item, scope) && item.isAvailable()) candidates.add(item);
             }
             post(() -> {
                 if (candidates.isEmpty()) {
@@ -300,7 +369,8 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
                             + " · " + java.text.DateFormat.getDateTimeInstance().format(new java.util.Date(item.importedAt))
                             + " · " + item.sha256.substring(0, 8);
                 }
-                new AlertDialog.Builder(this).setTitle(R.string.media_library_associate)
+                new AlertDialog.Builder(this).setTitle(scope.messageKey == null ? R.string.media_library_associate
+                                : R.string.media_library_associate_message)
                         .setItems(labels, (dialog, index) -> {
                             LibraryItem item = candidates.get(index);
                             // Let the user identify the exact copy visually before linking it.
@@ -308,9 +378,11 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
                                     .setNeutralButton(R.string.media_library_preview, (d, w) ->
                                             openItems(java.util.Collections.singletonList(item.uuid), 0))
                                     .setNegativeButton(android.R.string.cancel, null)
-                                    .setPositiveButton(R.string.media_library_associate, (d, w) -> work(() -> {
-                                        boolean linked = library.associate(item.uuid, scope.packageName,
-                                                scope.accountKey, scope.threadKey);
+                                    .setPositiveButton(scope.messageKey == null ? R.string.media_library_associate
+                                            : R.string.media_library_associate_message, (d, w) -> work(() -> {
+                                        boolean linked = scope.messageKey == null
+                                                ? library.associate(item.uuid, scope.packageName, scope.accountKey, scope.threadKey)
+                                                : library.associateMessage(item.uuid, scope);
                                         post(() -> toast(linked ? R.string.media_library_associated
                                                 : R.string.media_library_already_present));
                                     }, false)).show();
@@ -494,9 +566,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
                 }
                 try {
                     boolean waiting = batch.pending(scope);
-                    List<LibraryItem> items = library == null ? java.util.Collections.emptyList()
-                            : scoped() ? library.listChat(scope.packageName, scope.accountKey, scope.threadKey)
-                            : library.listAll(trash);
+                    List<LibraryItem> items = visibleItems();
                     String usage = library == null ? null : getString(R.string.media_library_usage,
                             items.size(), Formatter.formatFileSize(this, library.usedBytes()),
                             Formatter.formatFileSize(this, library.quotaBytes()));
@@ -519,12 +589,29 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
         }
     }
 
+    private List<LibraryItem> visibleItems() {
+        if (library == null) return java.util.Collections.emptyList();
+        if (scope.messageKey != null) {
+            LibraryItem copy = library.lookup(scope.packageName, scope.accountKey, scope.threadKey,
+                    scope.messageKey, scope.fromMe);
+            return copy == null || !copy.isAvailable() ? java.util.Collections.emptyList()
+                    : java.util.Collections.singletonList(copy);
+        }
+        return scoped() ? library.listChat(scope.packageName, scope.accountKey, scope.threadKey)
+                : library.listAll(trash);
+    }
+
+    private int libraryTitle() {
+        if (scope.messageKey != null) return R.string.media_library_message_title;
+        if (scoped()) return R.string.media_library_chat_title;
+        return trash ? R.string.media_library_trash : R.string.media_library_title;
+    }
+
     private void showItems(List<LibraryItem> items, String usage, boolean waiting) {
         pending = waiting;
         busy = false;
         if (grid != null) grid.submit(items);
-        setTitle(scoped() ? R.string.media_library_chat_title
-                : trash ? R.string.media_library_trash : R.string.media_library_title);
+        setTitle(libraryTitle());
         status.setText(usage == null ? getString(R.string.media_library_failure)
                 : items.isEmpty() ? getString(R.string.media_library_empty) + "\n" + usage : usage);
         manage.setEnabled(grid != null);

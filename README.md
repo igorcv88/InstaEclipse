@@ -53,6 +53,10 @@ Para guardar itens por conversa, ligue **Atalho da biblioteca no Direct** em **M
 
 Mantenha um item pressionado para exportar uma cópia ou movê-lo para a lixeira. No Android 10 ou mais recente, os arquivos importados são exportados para **DCIM/Instagram Library**. Em **Gerenciar**, você pode verificar arquivos, mudar o limite de armazenamento e criar ou restaurar um backup criptografado. A biblioteca mantém as cópias ao desligar o atalho do Direct.
 
+No Instagram **454.0.0.0.55**, o menu **Salvar** de uma foto ou vídeo convencional pode oferecer a biblioteca daquela mensagem. Vincule uma cópia existente ou selecione seu arquivo. A biblioteca mostra a miniatura quando há uma só cópia compatível com a mensagem.
+
+Para consolidar um export, extraia os arquivos e use **Gerenciar → Importar pasta de exportação**. O relatório mede só a pasta escolhida. Se a importação foi pausada no Direct, use **Retomar importação do Direct** na biblioteca principal. [Detalhes da integração com o Direct 454](docs/MEDIA_LIBRARY_DIRECT_454.md)
+
 [Documentação técnica e comandos de teste](docs/MEDIA_LIBRARY.md)
 
 ## Features

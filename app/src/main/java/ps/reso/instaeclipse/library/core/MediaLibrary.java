@@ -255,6 +255,33 @@ public final class MediaLibrary {
         }
     }
 
+    /** Explicitly links an existing unassigned copy. Identity comes from a validated Direct selection. */
+    public boolean associateMessage(String uuid, ImportRequest message) throws IOException {
+        message.validate();
+        if (message.messageKey == null || !"normal".equals(message.origin)) return false;
+        try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
+            LibraryItem item = get(uuid);
+            if (item == null || item.isTrashed() || !item.isAvailable() || item.messageKey != null
+                    || !isEligibleForAssociation(item, message)) return false;
+            return sql.inTransaction(() -> {
+                long account = ensureAccount(message.packageName, message.accountKey);
+                if (findCopy(account, message.threadKey, message.messageKey, message.fromMe, item.sha256) != null)
+                    return false;
+                sql.update("UPDATE items SET account_id=?, thread_key=?, message_key=?, from_me=?, origin=? WHERE id=?",
+                        account, message.threadKey, message.messageKey, message.fromMe ? 1 : 0,
+                        message.origin, item.id);
+                bumpGeneration();
+                return true;
+            });
+        }
+    }
+
+    public static boolean isEligibleForAssociation(LibraryItem item, ImportRequest message) {
+        return item.messageKey == null && (item.threadKey.isEmpty()
+                || (message.messageKey != null && message.packageName.equals(item.packageName)
+                && message.accountKey.equals(item.accountKey) && message.threadKey.equals(item.threadKey)));
+    }
+
     /** Every item (all accounts), for the module's own library screen. */
     public List<LibraryItem> listAll(boolean trashed) {
         List<LibraryItem> result = new ArrayList<>();

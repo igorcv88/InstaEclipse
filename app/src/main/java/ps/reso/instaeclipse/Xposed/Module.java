@@ -337,6 +337,10 @@ public class Module {
                         ModuleLog.line("(InstaEclipse | DevOptions): ❌ Failed to hook");
                     }
 
+                    if (!skip("DirectLibraryHook")) {
+                        ps.reso.instaeclipse.library.android.DirectLibraryHook.install(context, hostClassLoader);
+                    }
+
                     // Ghost Mode
                     try {
                         if (!skip("GhostDMSeenHook")) new GhostDMSeenHook().handleSeenBlock(dexKitBridge); // DM Seen

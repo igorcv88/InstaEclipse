@@ -55,4 +55,15 @@
         <item quantity="one">Importar %1$d arquivo selecionado para acesso offline?</item>
         <item quantity="other">Importar %1$d arquivos selecionados para acesso offline?</item>
     </plurals>
+    <string name="media_library_message_title">Mídia da mensagem</string>
+    <string name="media_library_message_offer">Abra a biblioteca local desta mensagem. Você pode vincular um arquivo que selecionar ou abrir uma cópia existente.</string>
+    <string name="media_library_associate_message">Vincular item da biblioteca a esta mensagem</string>
+    <string name="media_library_import_folder">Importar pasta de exportação</string>
+    <string name="media_library_export_discovered">Examinados: %1$d · Candidatos a foto e vídeo: %2$d · Ignorados: %3$d\nA cobertura se limita a esta pasta.</string>
+    <string name="media_library_export_empty">Nenhuma foto ou vídeo candidato nesta pasta.</string>
+    <string name="media_library_last_report">Última importação concluída</string>
+    <string name="media_library_no_report">Nenhum relatório de importação concluída neste escopo.</string>
+    <string name="media_library_coverage">Processados %1$d de %2$d candidatos · Importados: %3$d · Já presentes: %4$d · Falhas: %5$d · Sem vínculo com mensagem: %6$d\nExaminados na descoberta: %7$d · Ignorados: %8$d\nEste relatório cobre somente a fonte selecionada.</string>
+    <string name="media_library_pending_import">Retomar importação do Direct</string>
+    <string name="media_library_no_pending_import">Nenhuma importação do Direct pausada.</string>
 </resources>

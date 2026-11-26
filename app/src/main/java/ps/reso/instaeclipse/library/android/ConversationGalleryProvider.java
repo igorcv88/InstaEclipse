@@ -18,6 +18,8 @@ public final class ConversationGalleryProvider extends ContentProvider {
     public static final String TOKEN = "library_token";
     public static final String ACCOUNT = "library_account";
     public static final String THREAD = "library_thread";
+    public static final String MESSAGE = "library_message";
+    public static final String FROM_ME = "library_from_me";
     public static final String PACKAGE = "library_package";
     public static final String ENABLED = "directMediaLibrary";
 
@@ -36,9 +38,12 @@ public final class ConversationGalleryProvider extends ContentProvider {
         String account = extras.getString(ACCOUNT);
         String thread = extras.getString(THREAD);
         if (!ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) return null;
+        String message = extras.getString(MESSAGE);
+        boolean fromMe = extras.getBoolean(FROM_ME);
+        if (message == null ? fromMe : !ImportRequest.validKey(message)) return null;
         Bundle result = new Bundle();
-        result.putString(TOKEN, GalleryAccess.issue(new GalleryAccess.Grant(caller, account, thread,
-                SystemClock.elapsedRealtime())));
+        result.putString(TOKEN, GalleryAccess.issue(new GalleryAccess.Grant(caller, account, thread, message,
+                fromMe, SystemClock.elapsedRealtime())));
         return result;
     }
 

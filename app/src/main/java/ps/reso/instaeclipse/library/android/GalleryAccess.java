@@ -28,13 +28,22 @@ public final class GalleryAccess {
         public final String packageName;
         public final String accountKey;
         public final String threadKey;
+        public final String messageKey;
+        public final boolean fromMe;
         final long issuedAt;
 
         public Grant(String packageName, String accountKey, String threadKey,
                      long issuedAt) {
+            this(packageName, accountKey, threadKey, null, false, issuedAt);
+        }
+
+        public Grant(String packageName, String accountKey, String threadKey, String messageKey,
+                     boolean fromMe, long issuedAt) {
             this.packageName = packageName;
             this.accountKey = accountKey;
             this.threadKey = threadKey;
+            this.messageKey = messageKey;
+            this.fromMe = fromMe;
             this.issuedAt = issuedAt;
         }
     }

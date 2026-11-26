@@ -20,7 +20,8 @@ import ps.reso.instaeclipse.utils.core.DexKitQueryCache;
 
 public class GhostViewOnceHook {
 
-    private static final String CACHE_KEY = "GhostViewOnce_v2";
+    // v2 could cache the shared DM seen executor alongside the visual reporters.
+    private static final String CACHE_KEY = "GhostViewOnce_v3";
 
     public void handleViewOnceBlock(DexKitBridge bridge) {
         if (DexKitCache.isCacheValid()) {

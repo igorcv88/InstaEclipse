@@ -65,8 +65,8 @@ public final class DirectLibraryHook {
     }
 
     private static void hookMediaAction(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> modelClass = loader.loadClass(NATIVE_MODEL);
-        Class<?> identifierClass = loader.loadClass(MESSAGE);
+        Class<?> modelClass = hostClass(loader, NATIVE_MODEL);
+        Class<?> identifierClass = hostClass(loader, MESSAGE);
         Method identifier = modelClass.getDeclaredMethod("A0d");
         identifier.setAccessible(true);
         Field serverId = field(identifierClass, "A02", String.class.getName());
@@ -75,7 +75,7 @@ public final class DirectLibraryHook {
         if (identifier.getReturnType() != identifierClass) throw new NoSuchMethodException("Unexpected identifier");
 
         Method action = null;
-        for (Method candidate : loader.loadClass("X.0QtM").getDeclaredMethods()) {
+        for (Method candidate : hostClass(loader, "X.0QtM").getDeclaredMethods()) {
             Class<?>[] types = candidate.getParameterTypes();
             if ("A08".equals(candidate.getName()) && Modifier.isStatic(candidate.getModifiers())
                     && candidate.getReturnType() == void.class && types.length > 38
@@ -126,7 +126,7 @@ public final class DirectLibraryHook {
     }
 
     private static void hookSharedMedia(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> fragment = loader.loadClass("X.0KWO");
+        Class<?> fragment = hostClass(loader, "X.0KWO");
         Field threadKey = field(fragment, "A03", THREAD);
         Method getActivity = fragment.getMethod("getActivity");
         Method getView = fragment.getMethod("getView");
@@ -202,6 +202,11 @@ public final class DirectLibraryHook {
         String account = CurrentConversation.accountIdOf(session.invoke(owner));
         String thread = CurrentConversation.threadIdOfKey(key.get(owner));
         return account == null || thread == null ? null : new Scope(account, thread);
+    }
+
+    // These DEX names may start with a digit, which source-level reflection analysis cannot parse.
+    private static Class<?> hostClass(ClassLoader loader, String binaryName) throws ClassNotFoundException {
+        return Class.forName(binaryName, false, loader);
     }
 
     private static Field field(Class<?> owner, String name, String type) throws ReflectiveOperationException {

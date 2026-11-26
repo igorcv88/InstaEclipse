@@ -1,8 +1,8 @@
 package ps.reso.instaeclipse.library.android;
 
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaMetadataRetriever;
-import android.os.Build;
 
 import ps.reso.instaeclipse.library.core.MediaLibrary;
 
@@ -13,11 +13,7 @@ public final class AndroidDecodeProbe implements MediaLibrary.DecodeProbe {
     @Override
     public String check(File file, String mimeType) {
         if (mimeType.startsWith("image/")) {
-            if ("image/avif".equals(mimeType) && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null;
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(file.getPath(), options);
-            return options.outWidth > 0 && options.outHeight > 0 ? null : "image_undecodable";
+            return decodeImage(file);
         }
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         try {
@@ -35,4 +31,20 @@ public final class AndroidDecodeProbe implements MediaLibrary.DecodeProbe {
             }
         }
     }
+
+    private static String decodeImage(File file) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getPath(), options);
+        if (options.outWidth <= 0 || options.outHeight <= 0) return "image_undecodable";
+        int largestDimension = Math.max(options.outWidth, options.outHeight);
+        options.inSampleSize = 1;
+        while (largestDimension / options.inSampleSize > 512) options.inSampleSize *= 2;
+        options.inJustDecodeBounds = false;
+        Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
+        if (decoded == null) return "image_undecodable";
+        decoded.recycle();
+        return null;
+    }
+
 }

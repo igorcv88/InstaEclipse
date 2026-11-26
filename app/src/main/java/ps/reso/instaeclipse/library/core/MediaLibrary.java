@@ -39,7 +39,7 @@ public final class MediaLibrary {
 
     private static final String ITEM_COLUMNS = "i.id, i.uuid, i.account_id, a.package_name, a.account_key, i.thread_key, "
             + "i.message_key, i.from_me, i.media_kind, i.mime_type, i.sha256, "
-            + "b.size_bytes, i.message_timestamp, i.imported_at, i.origin, i.caption, i.trashed_at , b.state";
+            + "b.size_bytes, i.message_timestamp, i.imported_at, i.origin, i.caption, i.trashed_at, b.state";
     private static final String ITEM_FROM = " FROM items i JOIN accounts a ON a.id = i.account_id "
             + "JOIN blobs b ON b.sha256 = i.sha256 ";
 
@@ -50,7 +50,7 @@ public final class MediaLibrary {
     private volatile DecodeProbe decodeProbe;
 
     /**
-     * Device-side decode check (images: bounds decode; videos: duration and a video track).
+     * Device-side decode check (images: sampled decode; videos: duration and a video track).
      * Returns {@code null} when the file decodes, otherwise a reason. Optional: the structural
      * {@link MediaValidator} always runs.
      */

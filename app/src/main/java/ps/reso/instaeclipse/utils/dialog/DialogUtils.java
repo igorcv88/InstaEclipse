@@ -2927,6 +2927,8 @@ public class DialogUtils {
 
         layout.addView(createDivider(context));
         layout.addView(cardOf(context,
+                flagSwitch(context, R.drawable.ic_folder, A_MEDIA, R.string.media_library_direct_toggle, "directMediaLibrary",
+                        () -> ps.reso.instaeclipse.mods.ghost.ConversationMenuHook.refreshAll()),
                 flagSwitch(context, R.drawable.ic_download, "#FF9F0A", R.string.ig_dialog_downloader_voice, "enableVoiceDownload"),
                 flagSwitch(context, R.drawable.ic_download, "#FF9F0A", R.string.ig_dialog_downloader_stickers, "enableStickerDownload"),
                 flagSwitch(context, R.drawable.ic_download, "#FF9F0A", R.string.ig_dialog_downloader_dm_media, "enableDmMediaDownload"),

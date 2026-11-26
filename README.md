@@ -45,6 +45,16 @@ Under the hood, InstaEclipse uses [DexKit](https://github.com/LuckyPray/DexKit) 
 
 ---
 
+## Biblioteca de mídias do Direct
+
+No app **InstaEclipse**, abra **Recursos → Mídia → Biblioteca de mídias** e toque em **Importar arquivos**. Escolha as fotos ou os vídeos que quer guardar. Depois de importados, os arquivos abrem offline no visualizador do InstaEclipse. O seletor aceita vários arquivos e a importação pode ser pausada e retomada.
+
+Para guardar itens por conversa, ligue **Atalho da biblioteca no Direct** em **Mídia → Downloads**. No Instagram, mantenha pressionado o título da conversa e abra **Biblioteca de mídias**. Importe arquivos por ali ou use **Gerenciar → Vincular item da biblioteca a esta conversa**. Arquivos escolhidos desse jeito ficam na galeria da conversa, com o vínculo de mensagem em aberto.
+
+Mantenha um item pressionado para exportar uma cópia ou movê-lo para a lixeira. No Android 10 ou mais recente, os arquivos importados são exportados para **DCIM/Instagram Library**. Em **Gerenciar**, você pode verificar arquivos, mudar o limite de armazenamento e criar ou restaurar um backup criptografado. A biblioteca mantém as cópias ao desligar o atalho do Direct.
+
+[Documentação técnica e comandos de teste](docs/MEDIA_LIBRARY.md)
+
 ## Features
 
 Everything here is a switch in the menu. Tap a section to open it.

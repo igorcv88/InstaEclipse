@@ -141,6 +141,7 @@ public class SettingsManager {
         editor.putBoolean("jumpToFirstMessage", FeatureFlags.jumpToFirstMessage);
         editor.putBoolean("translateMessages", FeatureFlags.translateMessages);
         editor.putBoolean("bulkUnsend", FeatureFlags.bulkUnsend);
+        editor.putBoolean("directMediaLibrary", FeatureFlags.directMediaLibrary);
         editor.putBoolean("chatExport", FeatureFlags.chatExport);
         editor.putBoolean("voiceMessagesList", FeatureFlags.voiceMessagesList);
         editor.putBoolean("hideTabHome", FeatureFlags.hideTabHome);
@@ -415,6 +416,7 @@ public class SettingsManager {
         FeatureFlags.jumpToFirstMessage = prefs.getBoolean("jumpToFirstMessage", false);
         FeatureFlags.translateMessages = prefs.getBoolean("translateMessages", false);
         FeatureFlags.bulkUnsend = prefs.getBoolean("bulkUnsend", false);
+        FeatureFlags.directMediaLibrary = prefs.getBoolean("directMediaLibrary", false);
         FeatureFlags.chatExport = prefs.getBoolean("chatExport", false);
         FeatureFlags.voiceMessagesList = prefs.getBoolean("voiceMessagesList", false);
         FeatureFlags.hideTabHome = prefs.getBoolean("hideTabHome", false);

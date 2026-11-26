@@ -70,6 +70,14 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".library.ui.MediaLibraryActivity" android:exported="false" />
+        <activity android:name=".library.ui.LibraryViewerActivity" android:exported="false" />
+        <activity android:name=".library.ui.ConversationGalleryEntry"
+            android:exported="true" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+        <provider android:name=".library.android.ConversationGalleryProvider"
+            android:authorities="${applicationId}.media_library" android:exported="true" />
+
         <!-- Companion-app service: receives downloaded file (via ParcelFileDescriptor) from the
              Xposed module (running in Instagram's process) and writes it to the SAF folder
              whose permission belongs to the companion app. -->

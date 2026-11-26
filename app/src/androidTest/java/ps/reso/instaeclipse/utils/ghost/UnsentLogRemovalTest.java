@@ -102,6 +102,6 @@ public class UnsentLogRemovalTest {
         return new JSONArray(new String(Files.readAllBytes(destination.toPath()), StandardCharsets.UTF_8));
     }
     private static UnsentLog.Entry entry(long time, String thread, String text) {
-        return new UnsentLog.Entry(time, thread, "fixture label", text);
+        return new UnsentLog.Entry(time, thread, "fixture-id", "fixture label", text);
     }
 }

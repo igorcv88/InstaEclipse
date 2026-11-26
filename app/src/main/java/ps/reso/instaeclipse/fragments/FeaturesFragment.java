@@ -915,6 +915,11 @@ public class FeaturesFragment extends Fragment {
                 applyCategorySubtitle(nav);
                 rows.add(nav);
             }
+            if (g == GROUP_MEDIA) {
+                rows.add(createClickable(R.drawable.ic_folder, A_MEDIA, getString(R.string.media_library_title),
+                        () -> startActivity(new Intent(requireContext(),
+                                ps.reso.instaeclipse.library.ui.MediaLibraryActivity.class))));
+            }
             if (g == GROUP_TOOLS) {
                 rows.add(createTool(R.drawable.ic_save, "#30D158", getString(R.string.ig_dialog_backup_settings), getString(R.string.tool_backup_sub), this::backupSettings));
                 rows.add(createTool(R.drawable.ic_folder, "#0A84FF", getString(R.string.ig_dialog_restore_settings), getString(R.string.tool_restore_sub), this::restoreSettings));
@@ -2280,6 +2285,7 @@ public class FeaturesFragment extends Fragment {
 
         defs.add(getString(R.string.feat_options));
         defs.add(Arrays.asList(
+                createSwitch(R.drawable.ic_folder, A_MEDIA, getString(R.string.media_library_direct_toggle), "directMediaLibrary"),
                 createSwitch(R.drawable.ic_folder, "#FF9F0A", getString(R.string.ig_dialog_downloader_username_subfolder), "downloaderUsernameFolder"),
                 createSwitch(R.drawable.ic_timer, "#FF9F0A", getString(R.string.ig_dialog_downloader_add_timestamp), "downloaderAddTimestamp"),
                 createSwitch(R.drawable.ic_download, "#FF9F0A", getString(R.string.ig_dialog_downloader_voice), "enableVoiceDownload"),

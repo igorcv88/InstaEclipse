@@ -66,12 +66,12 @@
     <string name="media_library_coverage">Processed %1$d of %2$d candidates · Copied: %3$d · Already present: %4$d · Failed: %5$d · Without message link: %6$d\nInspected during discovery: %7$d · Skipped: %8$d\nThis report covers only the selected input.</string>
     <string name="media_library_pending_import">Resume a Direct import</string>
     <string name="media_library_no_pending_import">No paused Direct import.</string>
-    <string name="media_library_consolidation_toggle">Keep Direct media from Instagram\'s local cache</string>
+    <string name="media_library_consolidation_toggle">Keep Direct media automatically</string>
     <string name="media_library_consolidate_thread">Keep media from this chat</string>
     <string name="media_library_consolidate_account">Keep media from all cached chats</string>
     <string name="media_library_consolidate_title">Keep Direct media</string>
-    <string name="media_library_consolidate_thread_body">InstaEclipse reads the photos and videos of this chat that Instagram keeps on this device, and saves a private copy of each one. Only what Instagram already loaded is available. View-once and replayable media are listed but never opened or downloaded, so nothing is marked as seen.</string>
-    <string name="media_library_consolidate_account_body">InstaEclipse reads every chat of this account that Instagram keeps on this device and saves a private copy of each photo and video. This can use a lot of data and storage. Try it first with a test chat. View-once and replayable media are listed but never opened or downloaded.</string>
+    <string name="media_library_consolidate_thread_body">InstaEclipse already keeps the photos and videos of a chat as Instagram shows them. This also reads the few items Instagram keeps on this device for this chat. View-once and replayable media are kept only after you open them in Instagram, or when they are yours.</string>
+    <string name="media_library_consolidate_account_body">Reads the few media items Instagram keeps on this device for every chat of this account. Instagram 454 does not keep the chat history on the device: media are kept as you open and scroll your chats. View-once and replayable media are kept only after you open them, or when they are yours.</string>
     <string name="media_library_consolidate_start">Start</string>
     <string name="media_library_consolidate_queued">%1$d items sent to the library from %2$d cached messages (%3$d not readable). Copies continue in the background.</string>
     <string name="media_library_consolidate_failed">Could not read Instagram\'s local cache (%1$s).</string>

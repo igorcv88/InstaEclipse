@@ -42,8 +42,20 @@ public final class DirectStoreRow {
         public final DirectCoverage.Discovered identity;
         /** The single best candidate the client holds, or null when none is usable. */
         public final Candidate best;
+        /**
+         * Whether the module may fetch {@link #best}. Conventional and permanent items always;
+         * view-once and replayable items only when they are the account's own or the account is
+         * already in {@code seen_user_ids} (the user opened it in Instagram). Fetching then
+         * consumes nothing. Owner decision 2026-11-27.
+         */
+        public final boolean fetchAllowed;
 
         Part(DirectCoverage.Discovered identity, Candidate best) {
+            this(identity, best, !identity.viewOnce);
+        }
+
+        Part(DirectCoverage.Discovered identity, Candidate best, boolean fetchAllowed) {
+            this.fetchAllowed = fetchAllowed && best != null;
             this.identity = identity;
             this.best = best;
         }
@@ -51,11 +63,14 @@ public final class DirectStoreRow {
 
     public final String accountId, threadId, itemId, messageType, senderId;
     public final boolean viewOnce;
+    /** For view-once and replayable items: the account appears in {@code seen_user_ids}. */
+    public final boolean seenByViewer;
     public final long timestampMs;
     public final List<Part> parts;
 
     private DirectStoreRow(String accountId, String threadId, String itemId, String messageType, String senderId,
-                           boolean viewOnce, long timestampMs, List<Part> parts) {
+                           boolean viewOnce, boolean seenByViewer, long timestampMs, List<Part> parts) {
+        this.seenByViewer = seenByViewer;
         this.accountId = accountId;
         this.threadId = threadId;
         this.itemId = itemId;
@@ -97,6 +112,7 @@ public final class DirectStoreRow {
 
         JSONObject media;
         boolean viewOnce;
+        boolean seen = false;
         if (TYPE_MEDIA.equals(messageType)) {
             media = message.optJSONObject("media");
             viewOnce = false;
@@ -109,6 +125,12 @@ public final class DirectStoreRow {
                     : message.optString("view_mode", "");
             // Unknown mode on an expiring type is treated as view-once: never fetched automatically.
             viewOnce = !"permanent".equals(mode);
+            JSONArray seenBy = visual != null ? visual.optJSONArray("seen_user_ids") : null;
+            if (seenBy != null) {
+                for (int i = 0; i < seenBy.length(); i++) {
+                    if (accountId.equals(seenBy.optString(i, null))) seen = true;
+                }
+            }
         }
         List<Part> parts = new ArrayList<>();
         if (media != null) {
@@ -117,19 +139,20 @@ public final class DirectStoreRow {
                 for (int i = 0; i < carousel.length() && i < 20; i++) {
                     JSONObject slide = carousel.optJSONObject(i);
                     if (slide == null) continue;
-                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, timestampMs, slide));
+                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen, timestampMs, slide));
                 }
             } else {
-                parts.add(part(serverItemId, fromMe, viewOnce, timestampMs, media));
+                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen, timestampMs, media));
             }
         } else {
             parts.add(new Part(new DirectCoverage.Discovered(serverItemId, fromMe, "unknown", viewOnce, timestampMs), null));
         }
-        return new DirectStoreRow(accountId, threadId, serverItemId, messageType, sender, viewOnce, timestampMs,
+        return new DirectStoreRow(accountId, threadId, serverItemId, messageType, sender, viewOnce, seen, timestampMs,
                 Collections.unmodifiableList(parts));
     }
 
-    private static Part part(String key, boolean fromMe, boolean viewOnce, long timestampMs, JSONObject media) {
+    private static Part part(String key, boolean fromMe, boolean viewOnce, boolean openedOrOwn, long timestampMs,
+                             JSONObject media) {
         int type = media.optInt("media_type", 0);
         Candidate video = best(media.optJSONArray("video_versions"), true);
         JSONObject versions = media.optJSONObject("image_versions2");
@@ -137,7 +160,8 @@ public final class DirectStoreRow {
         boolean isVideo = type == 2 || (type == 0 && video != null);
         Candidate chosen = isVideo ? video : image;
         String kind = chosen == null ? "unknown" : (isVideo ? MediaSniffer.KIND_VIDEO : MediaSniffer.KIND_IMAGE);
-        return new Part(new DirectCoverage.Discovered(key, fromMe, kind, viewOnce, timestampMs), chosen);
+        return new Part(new DirectCoverage.Discovered(key, fromMe, kind, viewOnce, timestampMs), chosen,
+                !viewOnce || openedOrOwn);
     }
 
     /** Largest candidate by pixel count with an https URL on an Instagram or Facebook CDN. */

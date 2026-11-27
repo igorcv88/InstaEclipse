@@ -202,7 +202,7 @@ public final class DirectStoreScanner {
     }
 
     /** @return whether the module accepted the page, or null when it could not be reached */
-    private static Boolean offer(Context context, String account, String thread, List<DirectStoreRow> rows) {
+    static Boolean offer(Context context, String account, String thread, List<DirectStoreRow> rows) {
         ArrayList<String> keys = new ArrayList<>(), kinds = new ArrayList<>(), urls = new ArrayList<>();
         ArrayList<String> flags = new ArrayList<>();
         long[] timestamps;
@@ -211,8 +211,9 @@ public final class DirectStoreScanner {
             for (DirectStoreRow.Part part : row.parts) {
                 keys.add(part.identity.messageKey);
                 kinds.add(part.identity.mediaKind);
-                urls.add(part.best == null || part.identity.viewOnce ? "" : part.best.url);
-                flags.add((part.identity.fromMe ? "1" : "0") + (part.identity.viewOnce ? "1" : "0"));
+                urls.add(part.fetchAllowed ? part.best.url : "");
+                flags.add((part.identity.fromMe ? "1" : "0") + (part.identity.viewOnce ? "1" : "0")
+                        + (part.fetchAllowed ? "1" : "0"));
                 ts.add(part.identity.timestamp);
             }
         }

@@ -54,6 +54,25 @@ O ID usado pelo `CurrentConversation` (`thread:`), o `thread_id` de `direct.db` 
 - Para mídias convencionais, o módulo faz um GET HTTPS da URL de CDN que o modelo já contém (`*.cdninstagram.com`, `*.fbcdn.net`), sem cookies e sem chamar hosts da API. Isso não altera o estado da mensagem no servidor. É uma requisição de rede adicional e **não** uma leitura do cache de bytes do Instagram.
 - O hook visual por linha (`X.0ThI.AWs` / `Hjg`) está mapeado e **não foi implementado** nesta etapa. A apresentação nos balões continua nativa.
 
+## Evidência física (Galaxy, 2026-11-27)
+
+- `databases/` não contém base de histórico do Direct além de `direct.db`. `msys_temp_database_file_*` têm 0 bytes. `reverb_db_*` (`local_message_persistence_store`) é do Messenger criptografado. Conclusão: o Instagram 454 não guarda o histórico de conversas comuns no aparelho.
+- `direct.db` tinha 4 linhas de mídia, todas `raven_media`, três de uma conversa e uma de outra. Todas com `visual_media.view_mode = permanent` ("Manter na conversa"). O parser as classificou corretamente como capturáveis; nenhuma visualização única foi baixada.
+- A varredura de `direct.db` cobre só esse subconjunto. A captura passou a ser feita quando o Instagram monta a linha da mensagem (seção abaixo).
+- `DirectLibraryHook.hookMediaAction` falhou ao instalar ("message action unavailable"). A causa não aparece no log antigo; o log agora inclui a exceção.
+
+## Captura ao vivo
+
+| Fato | Classe | Confiança |
+|---|---|---|
+| `X.0BMD` reúne construtores estáticos de linhas do Direct `(Context, UserSession, X.017Y, X.01Fo, X.02NI) → X.0mbl`; um deles cria o modelo da linha de mídia `X.0BYS` | dexdump | A |
+| `X.01Fo.A0y` é o modelo `X.01hK` | dexdump | A |
+| `X.01hN.A00(X.0B6n, X.01hK)` serializa o modelo no mesmo JSON de `direct.db`; `X.02bf.A00` (`X.02bg`) cria o gerador com `A01(Writer)` | dexdump | A |
+| `UserSession.userId` é o ID da conta; `X.0248.A1a` compara remetente e conta assim | bytecode | A |
+| Mídia visual traz `seen_user_ids`, `seen_count`, `url_expire_at_secs` e `view_mode` | `X.01To` | A. Conteúdo de `seen_user_ids` depois da abertura pendente de aparelho |
+
+`DirectLiveCapture` intercepta esses construtores, serializa o modelo de mensagens `media`, `raven_media` e `visual_media`, aplica o mesmo `DirectStoreRow` e oferece ao módulo em lotes de 1,5 s, uma vez por mensagem e estado. Visualização única e com repetição só recebem URL quando a conta é a remetente ou já aparece em `seen_user_ids`.
+
 ## Pendências que dependem de aparelho
 
 1. Dump de uma linha `media` de teste: `adb shell su -c "sqlite3 /data/data/com.instagram.android/databases/direct.db 'select server_item_id, message_type, substr(message,1,2000) from messages where message_type=\"media\" limit 1'"`. Confirma o aninhamento de `image_versions2.candidates` e `video_versions`.

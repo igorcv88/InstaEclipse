@@ -2,6 +2,8 @@
 
 ## Decisões vinculantes do responsável (mais recentes primeiro)
 
+0. **2026-11-27, após o teste físico.** Comportamento esperado igual ao WhatsApp: guardar automaticamente as mídias que chegam e que o Instagram mostra, vinculadas à mensagem, para sempre e offline. Visualização única e com repetição são guardadas quando o usuário as abre no Instagram (ou quando são dele), nunca antes. Substitui a restrição de "só por ação explícita" da entrada 1 para mídias convencionais e permanentes; a proibição de consumir visualização única continua.
+
 1. **2026-11-27.** Não executar automaticamente operações que consumam visualizações únicas ou alterem irreversivelmente o estado das mensagens no servidor. Separar a consolidação histórica de arquivos elegíveis da abertura de mensagens efêmeras. Validar primeiro só com mídias de teste próprias ou autorizadas, sem operações em massa sobre conversas reais. Biblioteca, associação individual e integração visual são validadas de forma independente, e nenhuma depende de alterar o estado remoto. Preservar a disponibilidade nativa e não tratar a apresentação inline como garantia contra perda. **Revoga** a aceitação de prefetch da entrada 3.
 2. **2026-11-26.** Compose: arquitetura híbrida. Investigar a integração visual com Compose para mensagens convencionais e cópias próprias ou autorizadas, atrás de flag independente, com validação de identidade, recomposição, reciclagem, paginação e troca de contexto. Apresentação nativa e galeria própria permanecem como fallback. A biblioteca não depende da integração visual.
 3. ~~2026-11-26. Prefetch de visualização única aceito.~~ Revogado pela entrada 1.

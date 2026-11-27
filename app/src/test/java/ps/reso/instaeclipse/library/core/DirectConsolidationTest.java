@@ -63,7 +63,7 @@ public final class DirectConsolidationTest {
         for (DirectStoreRow row : rows) {
             for (DirectStoreRow.Part part : row.parts) {
                 out.add(new DirectConsolidation.Offer(row.accountId, row.threadId, part.identity,
-                        part.best == null ? null : part.best.url));
+                        part.fetchAllowed ? part.best.url : null, part.fetchAllowed));
             }
         }
         return out;
@@ -265,23 +265,23 @@ public final class DirectConsolidationTest {
         List<String> keys = java.util.Arrays.asList("41001", "41002");
         List<String> kinds = java.util.Arrays.asList("image", "video");
         List<String> urls = java.util.Arrays.asList(cdn("a"), "");
-        List<String> flags = java.util.Arrays.asList("00", "11");
+        List<String> flags = java.util.Arrays.asList("001", "110");
         long[] ts = {1, 2};
         List<DirectConsolidation.Offer> ok = DirectConsolidation.decode(ME, THREAD, keys, kinds, urls, flags, ts);
         assertEquals(2, ok.size());
         assertNull(ok.get(1).url);
         assertTrue(ok.get(1).identity.fromMe && ok.get(1).identity.viewOnce);
         assertNull(DirectConsolidation.decode(ME, THREAD, keys, kinds, urls, flags, new long[] {1}));
-        assertNull(DirectConsolidation.decode(ME, THREAD, keys, kinds, urls, java.util.Arrays.asList("00", "2x"), ts));
+        assertNull(DirectConsolidation.decode(ME, THREAD, keys, kinds, urls, java.util.Arrays.asList("001", "2x1"), ts));
         assertNull(DirectConsolidation.decode(ME, THREAD, keys, java.util.Arrays.asList("image", "audio"), urls, flags, ts));
         assertNull(DirectConsolidation.decode(ME, THREAD, java.util.Arrays.asList("41001", "41001"), kinds, urls,
-                java.util.Arrays.asList("00", "01"), ts));
+                java.util.Arrays.asList("001", "011"), ts));
         assertNull(DirectConsolidation.decode(ME, THREAD, java.util.Arrays.asList("41001", "bad key"), kinds, urls, flags, ts));
         assertNull(DirectConsolidation.decode("", THREAD, keys, kinds, urls, flags, ts));
         List<String> many = new ArrayList<>();
         for (int i = 0; i <= DirectConsolidation.MAX_OFFER_PARTS; i++) many.add("5" + i);
         List<String> image = new ArrayList<>(), none = new ArrayList<>(), zero = new ArrayList<>();
-        for (int i = 0; i < many.size(); i++) { image.add("image"); none.add(""); zero.add("00"); }
+        for (int i = 0; i < many.size(); i++) { image.add("image"); none.add(""); zero.add("001"); }
         assertNull(DirectConsolidation.decode(ME, THREAD, many, image, none, zero, new long[many.size()]));
     }
 
@@ -307,6 +307,54 @@ public final class DirectConsolidationTest {
             assertFalse(item.viewOnce);
             assertEquals("normal", item.origin);
             assertTrue(new DirectCoverage(upgraded).report(INSTAGRAM, ME, null).threads.isEmpty());
+        }
+    }
+
+    private static JSONObject visual(String mode, String name, String... seenBy) throws Exception {
+        JSONObject visual = new JSONObject().put("view_mode", mode).put("media", imageMedia(name));
+        if (seenBy.length > 0) visual.put("seen_user_ids", new JSONArray(java.util.Arrays.asList(seenBy)));
+        return visual;
+    }
+
+    @Test public void viewOnceIsFetchableOnlyWhenOwnOrAlreadyOpenedByTheAccount() throws Exception {
+        DirectStoreRow unseen = DirectStoreRow.parse(ME, THREAD, "60001", "raven_media", 1,
+                row("60001", PEER, "visual_media", visual("once", "u")).replace("\"item_type\":\"visual_media\"", "\"item_type\":\"raven_media\""));
+        DirectStoreRow seenByOther = DirectStoreRow.parse(ME, THREAD, "60002", "visual_media", 1,
+                row("60002", PEER, "visual_media", visual("replayable", "o", PEER)));
+        DirectStoreRow opened = DirectStoreRow.parse(ME, THREAD, "60003", "visual_media", 1,
+                row("60003", PEER, "visual_media", visual("once", "s", PEER, ME)));
+        DirectStoreRow own = DirectStoreRow.parse(ME, THREAD, "60004", "visual_media", 1,
+                row("60004", ME, "visual_media", visual("once", "m")));
+        DirectStoreRow permanent = DirectStoreRow.parse(ME, THREAD, "60005", "raven_media", 1,
+                row("60005", PEER, "visual_media", visual("permanent", "p")).replace("\"item_type\":\"visual_media\"", "\"item_type\":\"raven_media\""));
+        assertFalse(unseen.parts.get(0).fetchAllowed);
+        assertFalse(seenByOther.parts.get(0).fetchAllowed);
+        assertTrue(opened.parts.get(0).fetchAllowed);
+        assertTrue(opened.seenByViewer);
+        assertTrue(own.parts.get(0).fetchAllowed);
+        assertTrue(permanent.parts.get(0).fetchAllowed);
+        assertFalse(permanent.viewOnce);
+    }
+
+    @Test public void aViewOnceIsKeptAfterTheUserOpensItAndKeepsItsFlag() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            DirectConsolidation consolidation = new DirectConsolidation(library);
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("vo"), jpeg(61001));
+            DirectStoreRow before = DirectStoreRow.parse(ME, THREAD, "61001", "visual_media", 1,
+                    row("61001", PEER, "visual_media", visual("once", "vo")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(before), false);
+            consolidation.run(INSTAGRAM, cdn, 10, () -> false);
+            assertTrue("nothing is requested before the user opens it", cdn.requested.isEmpty());
+            fixture.clock.addAndGet(60_000);
+            DirectStoreRow after = DirectStoreRow.parse(ME, THREAD, "61001", "visual_media", 1,
+                    row("61001", PEER, "visual_media", visual("once", "vo", ME)));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(after), false);
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            LibraryItem kept = library.lookup(INSTAGRAM, ME, THREAD, "61001", false);
+            assertTrue(kept.viewOnce);
+            assertEquals("captured", kept.origin);
         }
     }
 }

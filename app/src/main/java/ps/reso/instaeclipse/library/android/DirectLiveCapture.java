@@ -46,7 +46,8 @@ public final class DirectLiveCapture {
     private static final long FLUSH_DELAY_MS = 1_500L;
 
     private static Context hostContext;
-    private static Field rowModel, rowMetadata, metadataThread, messageType, threadKey, threadId, sessionUser, visualModel;
+    private static Field rowModel, rowMetadata, metadataThread, wrappedThreadId, messageType, threadKey, threadId,
+            sessionUser, visualModel;
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
     private static Class<?> sessionClass, messageContextClass;
@@ -82,7 +83,8 @@ public final class DirectLiveCapture {
             Class<?> session = Class.forName(SESSION, false, loader);
             rowModel = field(contextArg, "A0y", MODEL);
             rowMetadata = field(contextArg, "A0K", "X.019w");
-            metadataThread = field(rowMetadata.getType(), "A0V", String.class.getName());
+            metadataThread = field(rowMetadata.getType(), "A0T", "X.00OP");
+            wrappedThreadId = field(metadataThread.getType(), "A00", String.class.getName());
             messageType = field(base, "A0V", "X.01iJ");
             threadKey = field(base, "A0T", "com.instagram.model.direct.DirectThreadKey");
             threadId = field(threadKey.getType(), "A00", String.class.getName());
@@ -156,6 +158,11 @@ public final class DirectLiveCapture {
             } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
                 discard("page_hook_" + mismatch.getClass().getSimpleName());
             }
+            try {
+                installRowBatchFallback(loader);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+                discard("row_batch_hook_" + mismatch.getClass().getSimpleName());
+            }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             ModuleLog.line("(IE|MediaLibrary) live capture unavailable: " + mismatch);
         }
@@ -202,12 +209,16 @@ public final class DirectLiveCapture {
                         + " via=" + method.getDeclaringClass().getName() + "." + method.getName());
             }
             if (!isMediaType(name)) return;
-            Object metadata = rowMetadata.get(context);
-            String thread = metadata == null ? null : (String) metadataThread.get(metadata);
+            String thread = threadFromMetadata(rowMetadata.get(context));
             captureScoped(model, (String) sessionUser.get(session), thread, name);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
         }
+    }
+
+    private static String threadFromMetadata(Object metadata) throws IllegalAccessException {
+        Object wrapped = metadata == null ? null : metadataThread.get(metadata);
+        return wrapped == null ? null : (String) wrappedThreadId.get(wrapped);
     }
 
     private static String modelType(Object model) throws IllegalAccessException {
@@ -230,10 +241,9 @@ public final class DirectLiveCapture {
             return false;
         }
         String thread = ImportRequest.validKey(modelThread) ? modelThread : sourceThread;
-        if (!ImportRequest.validKey(id) || !ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) {
-            discard("no_message_identity type=" + type);
-            return false;
-        }
+        if (!ImportRequest.validKey(id)) { discard("no_message_id type=" + type); return false; }
+        if (!ImportRequest.validKey(account)) { discard("no_account type=" + type); return false; }
+        if (!ImportRequest.validKey(thread)) { discard("no_thread_key type=" + type); return false; }
         capture(model, id, account, thread, type);
         return true;
     }
@@ -265,27 +275,10 @@ public final class DirectLiveCapture {
                     Object rawItems = pageItems.get(page);
                     if (!(rawItems instanceof List<?> items)) return;
 
-                    // The hook is passive. The host owns scheduling of inbox and thread requests.
-                    // Keep a bounded number of already delivered pages on the capture worker.
-                    boolean hasOlder = moreBefore.getBoolean(page);
                     String cursor = (String) oldestCursor.get(page);
                     boolean hasCursor = cursor != null && !cursor.isEmpty();
-                    if (items.size() > 512) {
-                        discard("native_page_too_large");
-                        return;
-                    }
-                    if (pendingPages.incrementAndGet() > 8) {
-                        pendingPages.decrementAndGet();
-                        discard("page_queue_full");
-                        return;
-                    }
-                    boolean posted = false;
-                    try {
-                        List<?> snapshot = new ArrayList<>(items);
-                        posted = worker.post(() -> captureNativePage(snapshot, account, thread, hasOlder, hasCursor));
-                    } finally {
-                        if (!posted) pendingPages.decrementAndGet();
-                    }
+                    enqueuePage(items, null, account, thread, "native thread page",
+                            " has_older=" + moreBefore.getBoolean(page) + " has_cursor=" + hasCursor);
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_observer_" + failure.getClass().getSimpleName());
                 }
@@ -294,22 +287,88 @@ public final class DirectLiveCapture {
         ModuleLog.line("(IE|MediaLibrary) 454 native thread page observer installed");
     }
 
-    private static void captureNativePage(List<?> items, String account, String thread, boolean hasOlder,
-                                          boolean hasCursor) {
+    /**
+     * The native row generator receives the thread separately from its row metadata. This gives
+     * rows without an embedded thread id a second source scoped to the same batch and session.
+     */
+    private static void installRowBatchFallback(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> generator = Class.forName("X.01CY", false, loader);
+        Class<?> controller = Class.forName("X.09WC", false, loader);
+        Class<?> batchEntry = Class.forName("X.0Zcn", false, loader);
+        Method getThreadKey = findNoArg(controller, "Ccj", threadKey.getType());
+        Method getModel = findNoArg(batchEntry, "CeD", rowModel.getType());
+        Field generatorSession = field(generator, "A00", SESSION);
+        for (Method batch : generator.getDeclaredMethods()) {
+            Class<?>[] types = batch.getParameterTypes();
+            if (!batch.getName().equals("A02") || Modifier.isStatic(batch.getModifiers())
+                    || batch.getReturnType() != ArrayList.class || types.length != 5
+                    || !"X.017Y".equals(types[0].getName()) || !"X.0ZeL".equals(types[1].getName())
+                    || types[2] != rowMetadata.getType() || !"X.0qeA".equals(types[3].getName())
+                    || types[4] != List.class) continue;
+            XposedBridge.hookMethod(batch, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    JitGuard.tick(param.method);
+                    if (param.hasThrowable() || !FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
+                    try {
+                        if (ImportRequest.validKey(threadFromMetadata(param.args[2]))) return;
+                        Object owner = param.args[3];
+                        if (!controller.isInstance(owner) || !(param.args[4] instanceof List<?> items)) return;
+                        Object key = getThreadKey.invoke(owner);
+                        Object session = generatorSession.get(param.thisObject);
+                        String thread = key == null ? null : (String) threadId.get(key);
+                        String account = session == null ? null : (String) sessionUser.get(session);
+                        if (!ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) {
+                            discard("row_batch_identity_unavailable");
+                            return;
+                        }
+                        enqueuePage(items, getModel, account, thread, "native row batch", "");
+                    } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                        discard("row_batch_" + failure.getClass().getSimpleName());
+                    }
+                }
+            });
+            ModuleLog.line("(IE|MediaLibrary) 454 native row batch fallback installed");
+            return;
+        }
+        throw new NoSuchMethodException("Direct row batch");
+    }
+
+    private static void enqueuePage(List<?> items, Method getModel, String account, String thread,
+                                    String source, String details) {
+        if (items.size() > 512) { discard("native_page_too_large"); return; }
+        if (pendingPages.incrementAndGet() > 8) {
+            pendingPages.decrementAndGet();
+            discard("page_queue_full");
+            return;
+        }
+        boolean posted = false;
+        try {
+            List<?> snapshot = new ArrayList<>(items);
+            posted = worker.post(() -> captureNativePage(snapshot, getModel, account, thread, source, details));
+        } finally {
+            if (!posted) pendingPages.decrementAndGet();
+        }
+    }
+
+    private static void captureNativePage(List<?> items, Method getModel, String account, String thread,
+                                          String source, String details) {
         int resolved = 0;
         try {
             if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
-            for (Object model : items) {
-                if (model == null || !rowModel.getType().isInstance(model)) continue;
+            for (Object item : items) {
+                if (item == null) continue;
                 try {
+                    if (getModel != null && !getModel.getDeclaringClass().isInstance(item)) continue;
+                    Object model = getModel == null ? item : getModel.invoke(item);
+                    if (!rowModel.getType().isInstance(model)) continue;
                     String type = modelType(model);
                     if (isMediaType(type) && captureScoped(model, account, thread, type)) resolved++;
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_item_" + failure.getClass().getSimpleName());
                 }
             }
-            ModuleLog.line("(IE|MediaLibrary) native thread page items=" + items.size()
-                    + " media_resolved=" + resolved + " has_older=" + hasOlder + " has_cursor=" + hasCursor);
+            ModuleLog.line("(IE|MediaLibrary) " + source + " items=" + items.size()
+                    + " media_resolved=" + resolved + details);
         } finally {
             pendingPages.decrementAndGet();
         }

@@ -12,14 +12,15 @@ import java.util.function.BooleanSupplier;
  * Consolidation of eligible Direct media into the library: discovery, then capture, each with
  * its own recorded state (see {@link DirectCoverage}).
  *
- * <p>Binding owner decisions (2026-11-26, newest first):</p>
+ * <p>Binding owner decisions (newest first):</p>
  * <ul>
- *   <li>Never run, automatically, anything that consumes a view-once view or changes a message's
- *       state on the server. View-once and other expiring items are recorded as discovered and
- *       left {@code UNAVAILABLE} with {@code view_once_not_fetched}; they are never fetched here.</li>
- *   <li>Historical consolidation of eligible files stays separate from opening ephemeral items.</li>
- *   <li>Validate first with the owner's own or authorised test media; no bulk run over real
- *       conversations by default.</li>
+ *   <li>2026-11-27, after the device test: conventional and permanent ("keep in chat") media are
+ *       kept automatically when Instagram shows them. View-once and replayable items are kept
+ *       only after the user opened them in Instagram (the account is in {@code seen_user_ids}) or
+ *       when they are the user's own; otherwise they are recorded and left {@code UNAVAILABLE}
+ *       with {@code view_once_not_fetched}. Fetching then consumes nothing.</li>
+ *   <li>2026-11-26: never run, automatically, anything that consumes a view-once view or changes a
+ *       message's state on the server.</li>
  * </ul>
  *
  * <p>The only network operation is an HTTPS GET of a media CDN URL that the client's own model
@@ -41,8 +42,16 @@ public final class DirectConsolidation {
         public final String accountKey, threadKey;
         public final DirectCoverage.Discovered identity;
         public final String url;
+        /** See {@link DirectStoreRow.Part#fetchAllowed}. A view-once item is fetched only when this is set. */
+        public final boolean fetchAllowed;
 
         public Offer(String accountKey, String threadKey, DirectCoverage.Discovered identity, String url) {
+            this(accountKey, threadKey, identity, url, !identity.viewOnce);
+        }
+
+        public Offer(String accountKey, String threadKey, DirectCoverage.Discovered identity, String url,
+                     boolean fetchAllowed) {
+            this.fetchAllowed = fetchAllowed;
             this.accountKey = accountKey;
             this.threadKey = threadKey;
             this.identity = identity;
@@ -86,7 +95,7 @@ public final class DirectConsolidation {
         }
         int added = coverage.discover(packageName, accountKey, threadKey, new DirectCoverage.Page(page, reachedStart));
         for (Offer offer : offers) {
-            if (offer.identity.viewOnce) {
+            if (offer.identity.viewOnce && !offer.fetchAllowed) {
                 coverage.settle(packageName, accountKey, threadKey, offer.identity,
                         DirectCoverage.State.UNAVAILABLE, null, VIEW_ONCE_NOT_FETCHED);
             } else if (!DirectStoreRow.isCdnUrl(offer.url)) {
@@ -105,7 +114,7 @@ public final class DirectConsolidation {
             Long account = library.findAccount(packageName, accountKey);
             if (account == null) return;
             library.sql().update("UPDATE direct_items SET source_url=?, source_seen_at=? WHERE account_id=? "
-                            + "AND thread_key=? AND message_key=? AND from_me=? AND view_once=0",
+                            + "AND thread_key=? AND message_key=? AND from_me=?",
                     url, library.now(), account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0);
         }
     }
@@ -124,7 +133,7 @@ public final class DirectConsolidation {
      */
     private static final String WORK = "FROM direct_items d JOIN accounts a ON a.id=d.account_id "
             + "LEFT JOIN items i ON i.uuid=d.item_uuid LEFT JOIN blobs b ON b.sha256=i.sha256 "
-            + "WHERE a.package_name=? AND d.view_once=0 AND d.source_url IS NOT NULL "
+            + "WHERE a.package_name=? AND d.source_url IS NOT NULL "
             + "AND (d.state='pending' OR (d.state='failed' AND d.attempts<?) "
             + "OR (d.state='unavailable' AND d.source_seen_at>d.settled_at) "
             + "OR (d.state IN ('imported','already_present') AND i.id IS NOT NULL AND i.trashed_at=0 "
@@ -161,7 +170,7 @@ public final class DirectConsolidation {
      */
     public RunReport run(String packageName, Fetcher fetcher, int budget, BooleanSupplier cancelled) throws IOException {
         RunReport report = new RunReport();
-        List<Map<String, Object>> work = library.sql().query("SELECT d.id, d.state, d.thread_key, d.message_key, d.from_me, "
+        List<Map<String, Object>> work = library.sql().query("SELECT d.id, d.state, d.view_once, d.thread_key, d.message_key, d.from_me, "
                         + "d.media_kind, d.message_timestamp, d.source_url, a.account_key " + WORK
                         + "ORDER BY d.message_timestamp ASC, d.id ASC LIMIT ?",
                 packageName, DirectCoverage.MAX_ATTEMPTS, Math.max(1, budget));
@@ -175,7 +184,8 @@ public final class DirectConsolidation {
             String url = Sql.Rows.getString(row, "source_url");
             DirectCoverage.Discovered identity = new DirectCoverage.Discovered(
                     Sql.Rows.getString(row, "message_key"), Sql.Rows.getLong(row, "from_me") != 0,
-                    Sql.Rows.getString(row, "media_kind"), false, Sql.Rows.getLong(row, "message_timestamp"));
+                    Sql.Rows.getString(row, "media_kind"), Sql.Rows.getLong(row, "view_once") != 0,
+                    Sql.Rows.getLong(row, "message_timestamp"));
             report.attempted++;
             DirectCapture.Outcome outcome;
             try {
@@ -255,7 +265,7 @@ public final class DirectConsolidation {
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (int i = 0; i < n; i++) {
             String flag = flags.get(i);
-            if (flag == null || !flag.matches("[01]{2}") || !ImportRequest.validKey(keys.get(i))) return null;
+            if (flag == null || !flag.matches("[01]{3}") || !ImportRequest.validKey(keys.get(i))) return null;
             String kind = kinds.get(i);
             if (!MediaSniffer.KIND_IMAGE.equals(kind) && !MediaSniffer.KIND_VIDEO.equals(kind) && !"unknown".equals(kind))
                 return null;
@@ -264,7 +274,7 @@ public final class DirectConsolidation {
             String url = urls.get(i);
             if (url != null && (url.isEmpty() || url.length() > 4096)) url = null;
             offers.add(new Offer(accountKey, threadKey, new DirectCoverage.Discovered(keys.get(i), fromMe, kind,
-                    flag.charAt(1) == '1', timestamps[i]), url));
+                    flag.charAt(1) == '1', timestamps[i]), url, flag.charAt(2) == '1'));
         }
         return offers;
     }

@@ -175,7 +175,7 @@ public final class DirectStoreScanner {
                 // IPC pages are capped at MAX_OFFER_PARTS; carousels can exceed it within one DB page.
                 for (List<DirectStoreRow> send : DirectStoreRow.batches(rows,
                         ps.reso.instaeclipse.library.core.DirectConsolidation.MAX_OFFER_PARTS)) {
-                    Boolean accepted = offer(context, accountId, threadId, send);
+                    Boolean accepted = offer(context, accountId, threadId, send, true);
                     if (accepted == null) {
                         result.error = "module_unavailable";
                         return result;
@@ -202,7 +202,8 @@ public final class DirectStoreScanner {
     }
 
     /** @return whether the module accepted the page, or null when it could not be reached */
-    private static Boolean offer(Context context, String account, String thread, List<DirectStoreRow> rows) {
+    /** @param explicit a scan the user started (clears a pause); false for automatic capture */
+    static Boolean offer(Context context, String account, String thread, List<DirectStoreRow> rows, boolean explicit) {
         ArrayList<String> keys = new ArrayList<>(), kinds = new ArrayList<>(), urls = new ArrayList<>();
         ArrayList<String> flags = new ArrayList<>();
         long[] timestamps;
@@ -211,8 +212,9 @@ public final class DirectStoreScanner {
             for (DirectStoreRow.Part part : row.parts) {
                 keys.add(part.identity.messageKey);
                 kinds.add(part.identity.mediaKind);
-                urls.add(part.best == null || part.identity.viewOnce ? "" : part.best.url);
-                flags.add((part.identity.fromMe ? "1" : "0") + (part.identity.viewOnce ? "1" : "0"));
+                urls.add(part.fetchAllowed ? part.best.url : "");
+                flags.add((part.identity.fromMe ? "1" : "0") + (part.identity.viewOnce ? "1" : "0")
+                        + (part.fetchAllowed ? "1" : "0"));
                 ts.add(part.identity.timestamp);
             }
         }
@@ -226,6 +228,7 @@ public final class DirectStoreScanner {
         extras.putStringArrayList(DirectOfferContract.URLS, urls);
         extras.putStringArrayList(DirectOfferContract.FLAGS, flags);
         extras.putLongArray(DirectOfferContract.TIMESTAMPS, timestamps);
+        extras.putBoolean(DirectOfferContract.EXPLICIT, explicit);
         try {
             Bundle reply = context.getContentResolver().call(ConversationGalleryProvider.URI,
                     DirectOfferContract.METHOD, null, extras);

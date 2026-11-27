@@ -205,7 +205,7 @@ public final class DirectReviewFixesTest {
             List<Long> ts = new ArrayList<>();
             for (DirectStoreRow row : batch) for (DirectStoreRow.Part part : row.parts) {
                 keys.add(part.identity.messageKey); kinds.add(part.identity.mediaKind);
-                urls.add(part.best.url); flags.add("00"); ts.add(1L);
+                urls.add(part.best.url); flags.add("001"); ts.add(1L);
             }
             long[] stamps = ts.stream().mapToLong(Long::longValue).toArray();
             assertNotNull("every batch must pass the module's decoder",

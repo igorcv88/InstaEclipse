@@ -55,13 +55,14 @@ public final class DirectLibraryHook {
         try {
             hookMediaAction(loader);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
-            ModuleLog.line("(IE|MediaLibrary) message action unavailable");
+            ModuleLog.line("(IE|MediaLibrary) message action unavailable: " + mismatch);
         }
         try {
             hookSharedMedia(loader);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
-            ModuleLog.line("(IE|MediaLibrary) shared media unavailable");
+            ModuleLog.line("(IE|MediaLibrary) shared media unavailable: " + mismatch);
         }
+        DirectLiveCapture.install(context, loader);
     }
 
     private static void hookMediaAction(ClassLoader loader) throws ReflectiveOperationException {

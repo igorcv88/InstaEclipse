@@ -41,6 +41,18 @@ public class GhostPermanentViewHook {
     public static final String PERMANENT = "permanent";
     public static final java.util.Map<Long, String> ORIGINAL_BY_KEY =
             new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * Original mode per rewritten model object (454: the visual-media model {@code X.02jG}, which
+     * is {@code X.01hK.A0J}). The media library reads it so a rewritten "permanent" never hides a
+     * view-once item. Weak keys: an entry lives only as long as Instagram's own model.
+     */
+    public static final java.util.Map<Object, String> ORIGINAL_BY_OBJECT =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** The original mode of a model this hook rewrote, or null. */
+    public static String originalMode(Object model) {
+        return model == null ? null : ORIGINAL_BY_OBJECT.get(model);
+    }
 
     public void install(DexKitBridge bridge, ClassLoader classLoader) {
         if (DexKitCache.isCacheValid()) {
@@ -144,6 +156,7 @@ public class GhostPermanentViewHook {
                             }
                             if (original != null) {
                                 for (Long k : keys) ORIGINAL_BY_KEY.put(k, original);
+                                ORIGINAL_BY_OBJECT.put(result, original);
                                 ModuleLog.line("(IE|ViewOnceMedia) mode=" + original + " keys=" + keys);
                                 f.set(result, PERMANENT);
                             }

@@ -66,12 +66,12 @@
     <string name="media_library_coverage">Processados %1$d de %2$d candidatos · Importados: %3$d · Já presentes: %4$d · Falhas: %5$d · Sem vínculo com mensagem: %6$d\nExaminados na descoberta: %7$d · Ignorados: %8$d\nEste relatório cobre somente a fonte selecionada.</string>
     <string name="media_library_pending_import">Retomar importação do Direct</string>
     <string name="media_library_no_pending_import">Nenhuma importação do Direct pausada.</string>
-    <string name="media_library_consolidation_toggle">Guardar mídias do Direct a partir do cache local do Instagram</string>
+    <string name="media_library_consolidation_toggle">Guardar automaticamente as mídias do Direct</string>
     <string name="media_library_consolidate_thread">Guardar mídias desta conversa</string>
     <string name="media_library_consolidate_account">Guardar mídias de todas as conversas em cache</string>
     <string name="media_library_consolidate_title">Guardar mídias do Direct</string>
-    <string name="media_library_consolidate_thread_body">O InstaEclipse lê as fotos e vídeos desta conversa que o Instagram mantém neste aparelho e guarda uma cópia privada de cada um. Só está disponível o que o Instagram já carregou. Mídias de visualização única e com repetição aparecem na contagem, mas nunca são abertas nem baixadas. Nada é marcado como visto.</string>
-    <string name="media_library_consolidate_account_body">O InstaEclipse lê todas as conversas desta conta que o Instagram mantém neste aparelho e guarda uma cópia privada de cada foto e vídeo. Isso pode consumir muitos dados e espaço. Teste antes com uma conversa de teste. Mídias de visualização única e com repetição aparecem na contagem, mas nunca são abertas nem baixadas.</string>
+    <string name="media_library_consolidate_thread_body">O InstaEclipse já guarda as fotos e vídeos de uma conversa conforme o Instagram os mostra. Isto também lê os poucos itens que o Instagram mantém neste aparelho para esta conversa. Mídias de visualização única e com repetição só são guardadas depois que você as abre no Instagram, ou quando são suas.</string>
+    <string name="media_library_consolidate_account_body">Lê os poucos itens de mídia que o Instagram mantém neste aparelho para todas as conversas desta conta. O Instagram 454 não guarda o histórico das conversas no aparelho: as mídias são guardadas conforme você abre e rola as conversas. Mídias de visualização única e com repetição só são guardadas depois que você as abre, ou quando são suas.</string>
     <string name="media_library_consolidate_start">Iniciar</string>
     <string name="media_library_consolidate_queued">%1$d itens enviados à biblioteca de %2$d mensagens em cache (%3$d ilegíveis). As cópias continuam em segundo plano.</string>
     <string name="media_library_consolidate_failed">Não foi possível ler o cache local do Instagram (%1$s).</string>

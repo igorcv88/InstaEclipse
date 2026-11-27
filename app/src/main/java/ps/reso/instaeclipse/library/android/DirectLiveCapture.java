@@ -49,7 +49,7 @@ public final class DirectLiveCapture {
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
     private static Class<?> sessionClass, messageContextClass;
-    private static Handler worker;
+    private static volatile Handler worker;
 
     /** (account|thread|id|fetchable) already offered in this process. */
     private static final Map<String, Boolean> offered = new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
@@ -275,7 +275,28 @@ public final class DirectLiveCapture {
             schedule = pending.isEmpty();
             pending.computeIfAbsent(scope, ignored -> new LinkedHashMap<>()).put(row.itemId, row);
         }
-        if (schedule) worker.postDelayed(DirectLiveCapture::flush, FLUSH_DELAY_MS);
+        if (schedule && !worker.postDelayed(DirectLiveCapture::safeFlush, FLUSH_DELAY_MS)) {
+            // The looper is gone: start a new one so captures keep flowing.
+            ModuleLog.line("(IE|MediaLibrary) live capture worker was stopped; restarting it");
+            HandlerThread thread = new HandlerThread("ie-direct-live-capture");
+            thread.start();
+            worker = new Handler(thread.getLooper());
+            worker.postDelayed(DirectLiveCapture::safeFlush, FLUSH_DELAY_MS);
+        }
+    }
+
+    /** Never lets an exception kill the worker thread (or Instagram): log it and keep the rows. */
+    private static void safeFlush() {
+        try {
+            flush();
+        } catch (Throwable failure) {
+            StackTraceElement[] trace = failure.getStackTrace();
+            ModuleLog.line("(IE|MediaLibrary) live capture flush failed: " + failure
+                    + (trace.length > 0 ? " at " + trace[0] : ""));
+            synchronized (offered) {
+                offered.clear(); // let every row be offered again on its next bind
+            }
+        }
     }
 
     private static void flush() {
@@ -285,6 +306,10 @@ public final class DirectLiveCapture {
             pending.clear();
         }
         Context context = appContext;
+        int queued = 0;
+        for (Map<String, DirectStoreRow> byId : batch.values()) queued += byId.size();
+        ModuleLog.line("(IE|MediaLibrary) live capture flushing rows=" + queued
+                + (context == null ? " (no context)" : ""));
         if (context == null) return;
         int sent = 0;
         for (Map<String, DirectStoreRow> byId : batch.values()) {

@@ -559,7 +559,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
             }
             String body = getString(R.string.media_library_coverage_body, report.threads.size(), report.threadsComplete,
                     report.discovered, kept, report.unavailable, viewOnce, refused, ambiguous,
-                    report.pending + report.failed, damaged, trashedCopies);
+                    report.pending, damaged, trashedCopies, report.failed);
             post(() -> {
                 boolean running = ps.reso.instaeclipse.library.android.DirectConsolidationWorker.isRunning();
                 new AlertDialog.Builder(this).setTitle(R.string.media_library_coverage_title).setMessage(body)
@@ -626,10 +626,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     private List<LibraryItem> visibleItems() {
         if (library == null) return java.util.Collections.emptyList();
         if (scope.messageKey != null) {
-            LibraryItem copy = library.lookup(scope.packageName, scope.accountKey, scope.threadKey,
-                    scope.messageKey, scope.fromMe);
-            return copy == null || !copy.isAvailable() ? java.util.Collections.emptyList()
-                    : java.util.Collections.singletonList(copy);
+            return library.listMessage(scope);
         }
         return scoped() ? library.listChat(scope.packageName, scope.accountKey, scope.threadKey)
                 : library.listAll(trash);

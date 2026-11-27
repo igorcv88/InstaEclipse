@@ -216,7 +216,7 @@ public final class DirectLiveCapture {
             }
             if (!isMediaType(name)) return;
             String thread = threadFromMetadata(rowMetadata.get(context));
-            captureScoped(model, (String) sessionUser.get(session), thread, name, false);
+            captureScoped(model, (String) sessionUser.get(session), thread, name, method instanceof java.lang.reflect.Constructor<?> ? "constructor" : "builder");
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
         }
@@ -237,22 +237,26 @@ public final class DirectLiveCapture {
     }
 
     private static boolean captureScoped(Object model, String account, String sourceThread, String type,
-                                         boolean fromSharedMedia)
+                                         String observer)
             throws ReflectiveOperationException {
         String id = (String) serverId.invoke(model);
         Object key = threadKey.get(model);
         String modelThread = key == null ? null : (String) threadId.get(key);
         if (ImportRequest.validKey(modelThread) && ImportRequest.validKey(sourceThread)
                 && !modelThread.equals(sourceThread)) {
+            DirectTrace.event(account, sourceThread, id, "discovery",
+                    "observer=" + observer + " result=scope_mismatch");
             discard("model_thread_differs_from_source");
             return false;
         }
         String thread = ImportRequest.validKey(modelThread) ? modelThread : sourceThread;
+        DirectTrace.event(account, thread, id, "discovery",
+                "observer=" + observer + " native_type=" + type + " id_valid=" + ImportRequest.validKey(id)
+                        + " scoped=" + (ImportRequest.validKey(thread) && ImportRequest.validKey(account)));
         if (!ImportRequest.validKey(id)) { discard("no_message_id type=" + type); return false; }
         if (!ImportRequest.validKey(account)) { discard("no_account type=" + type); return false; }
         if (!ImportRequest.validKey(thread)) { discard("no_thread_key type=" + type); return false; }
-        capture(model, id, account, thread, type, fromSharedMedia);
-        return true;
+        return capture(model, id, account, thread, type, observer);
     }
 
     /** Observes Instagram's own thread response before any row must be built. */
@@ -284,7 +288,7 @@ public final class DirectLiveCapture {
 
                     String cursor = (String) oldestCursor.get(page);
                     boolean hasCursor = cursor != null && !cursor.isEmpty();
-                    enqueuePage(items, account, thread, "native thread page",
+                    enqueuePage(items, account, thread, "native_page",
                             " has_older=" + moreBefore.getBoolean(page) + " has_cursor=" + hasCursor);
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_observer_" + failure.getClass().getSimpleName());
@@ -329,7 +333,7 @@ public final class DirectLiveCapture {
                             discard("row_batch_identity_unavailable");
                             return;
                         }
-                        enqueuePage(items, account, thread, "native row batch", "");
+                        enqueuePage(items, account, thread, "native_row_batch", "");
                     } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                         discard("row_batch_" + failure.getClass().getSimpleName());
                     }
@@ -362,7 +366,7 @@ public final class DirectLiveCapture {
                         if (model == null || session == null) return;
                         String type = modelType(model);
                         if (!isMediaType(type)) return;
-                        captureScoped(model, (String) sessionUser.get(session), null, type, true);
+                        captureScoped(model, (String) sessionUser.get(session), null, type, "shared_media");
                     } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                         discard("shared_media_model_" + failure.getClass().getSimpleName());
                     }
@@ -397,10 +401,13 @@ public final class DirectLiveCapture {
         try {
             if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
             for (Object model : items) {
-                if (!rowModel.getType().isInstance(model)) continue;
+                if (!rowModel.getType().isInstance(model)) {
+                    discard(source + "_non_message_model");
+                    continue;
+                }
                 try {
                     String type = modelType(model);
-                    if (isMediaType(type) && captureScoped(model, account, thread, type, false)) resolved++;
+                    if (isMediaType(type) && captureScoped(model, account, thread, type, source)) resolved++;
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_item_" + failure.getClass().getSimpleName());
                 }
@@ -412,8 +419,9 @@ public final class DirectLiveCapture {
         }
     }
 
-    private static void capture(Object model, String id, String account, String thread, String type,
-                                boolean fromSharedMedia) throws ReflectiveOperationException {
+    private static boolean capture(Object model, String id, String account, String thread, String type,
+                                   String observer) throws ReflectiveOperationException {
+        boolean fromSharedMedia = "shared_media".equals(observer);
         try {
             long micros = (long) timestamp.invoke(model);
             StringWriter json = new StringWriter();
@@ -431,16 +439,29 @@ public final class DirectLiveCapture {
                         .originalModeForMedia(feedMedia.get(model));
             }
             DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
-            if (row == null) { discard("parse_refused type=" + type + " item_type=" + itemType); return; }
+            if (row == null) {
+                DirectTrace.event(account, thread, id, "parsed", "observer=" + observer + " result=refused");
+                discard("parse_refused type=" + type + " item_type=" + itemType);
+                return false;
+            }
             // A persisted "permanent" visual model may be an older, already rewritten row.
             if (fromSharedMedia && !DirectStoreRow.TYPE_MEDIA.equals(itemType) && !row.viewOnce
                     && !account.equals(row.senderId) && !row.seenByViewer) {
                 discard("shared_media_visual_mode_unverified");
-                return;
+                return false;
             }
             DirectLiveOfferQueue.Add added = queue.add(row);
             if (added == DirectLiveOfferQueue.Add.FULL) discard("live_offer_queue_full");
-            if (added != DirectLiveOfferQueue.Add.QUEUED) return;
+            if (DirectTrace.enabled()) {
+                for (DirectStoreRow.Part part : row.parts) {
+                    DirectTrace.event(account, thread, part.identity.messageKey, "host_queue",
+                            "observer=" + observer + " parent=" + DirectTrace.alias(account, thread, id)
+                                    + " result=" + added + " candidate=" + (part.best != null)
+                                    + " fetchable=" + part.fetchAllowed + " kind=" + part.identity.mediaKind
+                                    + " from_me=" + part.identity.fromMe);
+                }
+            }
+            if (added != DirectLiveOfferQueue.Add.QUEUED) return false;
             scheduleFlush();
             int allowed = 0, missingSource = 0;
             for (DirectStoreRow.Part part : row.parts) {
@@ -450,9 +471,11 @@ public final class DirectLiveCapture {
             ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
                     + " fetchable=" + allowed + " missing_source=" + missingSource + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
                     + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId)
-                    + (fromSharedMedia ? " source=shared_media" : ""));
+                    + " source=" + observer);
+            return true;
         } catch (org.json.JSONException failure) {
             discard("json " + failure.getClass().getSimpleName());
+            return false;
         }
     }
 

@@ -81,6 +81,30 @@ public final class DirectStoreRow {
         this.parts = parts;
     }
 
+    /** Merge only two observations from the same message and direction. */
+    public DirectStoreRow mergeObservation(DirectStoreRow latest) {
+        if (!accountId.equals(latest.accountId) || !threadId.equals(latest.threadId)
+                || !itemId.equals(latest.itemId) || !senderId.equals(latest.senderId)) return this;
+        if (viewOnce != latest.viewOnce) return viewOnce ? this : latest;
+        // A source-less parent placeholder cannot describe which slides exist.
+        boolean previousSlides = parts.stream().anyMatch(part -> !itemId.equals(part.identity.messageKey));
+        boolean latestSlides = latest.parts.stream().anyMatch(part -> !itemId.equals(part.identity.messageKey));
+        if (previousSlides != latestSlides) return previousSlides ? this : latest;
+        java.util.Map<String, Part> partsByKey = new java.util.LinkedHashMap<>();
+        for (Part part : parts) partsByKey.put(part.identity.messageKey, part);
+        for (Part part : latest.parts) {
+            Part previous = partsByKey.get(part.identity.messageKey);
+            if (previous == null || part.fetchAllowed || !previous.fetchAllowed) {
+                partsByKey.put(part.identity.messageKey, part);
+            }
+        }
+        List<Part> merged = List.copyOf(partsByKey.values());
+        if (merged.equals(latest.parts)) return latest;
+        if (merged.equals(parts)) return this;
+        return new DirectStoreRow(accountId, threadId, itemId, latest.messageType, senderId,
+                viewOnce, seenByViewer || latest.seenByViewer, latest.timestampMs, merged);
+    }
+
     public static boolean isMediaType(String type) {
         return TYPE_MEDIA.equals(type) || TYPE_RAVEN.equals(type) || TYPE_VISUAL.equals(type);
     }

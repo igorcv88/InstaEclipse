@@ -62,4 +62,25 @@ public class DirectLiveOfferQueueTest {
         assertFalse(queue.hasPending());
         assertEquals(DirectLiveOfferQueue.Add.QUEUED, queue.add(row));
     }
+    @Test public void complementaryPartialCarouselsPreserveBothSources() {
+        DirectLiveOfferQueue queue = new DirectLiveOfferQueue();
+        String template = """
+                {"item_id":"42","item_type":"media","user_id":"100",
+                 "media":{"media_type":8,"carousel_media":[%s,%s]}}
+                """;
+        String image = """
+                {"media_type":1,"image_versions2":{"candidates":[
+                   {"url":"https://fixture.cdninstagram.com/%s","width":2,"height":2}
+                 ]}}
+                """;
+        queue.add(DirectStoreRow.parse("100", "200", "42", "media", 1,
+                template.formatted(image.formatted("left"), "{}")));
+        queue.add(DirectStoreRow.parse("100", "200", "42", "media", 1,
+                template.formatted("{}", image.formatted("right"))));
+        List<DirectStoreRow.Part> parts = queue.snapshot().get(0).row.parts;
+        assertEquals(2, parts.size());
+        assertTrue(parts.get(0).fetchAllowed);
+        assertTrue(parts.get(1).fetchAllowed);
+    }
+
 }

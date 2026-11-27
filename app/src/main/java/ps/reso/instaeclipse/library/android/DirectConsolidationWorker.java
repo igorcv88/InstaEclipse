@@ -31,13 +31,10 @@ public final class DirectConsolidationWorker {
     private static Request pending;
     private static volatile boolean running;
     private static volatile boolean pause;
-    private static volatile DirectConsolidation.RunReport last;
 
     private DirectConsolidationWorker() {}
 
     public static boolean isRunning() { return running; }
-
-    public static DirectConsolidation.RunReport lastReport() { return last; }
 
     /** Stops the active transfer and serializes the persistent pause with resume requests. */
     public static void requestPause(Context context) {
@@ -81,7 +78,7 @@ public final class DirectConsolidationWorker {
                 }
             }
             try {
-                DirectConsolidation consolidation = new DirectConsolidation(MediaLibraryRuntime.get(app));
+                DirectConsolidation consolidation = new DirectConsolidation(MediaLibraryRuntime.get(app), DirectTrace.PROGRESS);
                 if (request == Request.PAUSE) {
                     consolidation.setPaused(true);
                     continue;
@@ -90,11 +87,6 @@ public final class DirectConsolidationWorker {
                 if (request == Request.RETRY_FAILURES) consolidation.resetFailures(DirectStoreScanner.HOST);
                 run(app, consolidation);
             } catch (IOException | RuntimeException failure) {
-                if (request != Request.PAUSE) {
-                    DirectConsolidation.RunReport failed = new DirectConsolidation.RunReport();
-                    failed.stoppedOnFailure = true;
-                    last = failed;
-                }
                 Log.w(TAG, "request=" + request + " failed: " + failure.getClass().getSimpleName());
             }
         }
@@ -111,25 +103,27 @@ public final class DirectConsolidationWorker {
                 DirectConsolidation.RunReport report = consolidation.run(DirectStoreScanner.HOST,
                         DirectConsolidationWorker::open, BUDGET, stop);
                 add(total, report);
-                if (report.drained || report.stoppedOnFailure || report.cancelled || report.attempted == 0) break;
+                if (report.drained || report.cancelled || report.attempted == 0) break;
             } while (!stop.getAsBoolean());
         }
-        last = total;
         Log.i(TAG, "run imported=" + total.imported
                 + " present=" + total.alreadyPresent + " unavailable=" + total.unavailable + " refused=" + total.refused
                 + " ambiguous=" + total.ambiguous + " failed=" + total.failed + " drained=" + total.drained
-                + " attempted=" + total.attempted + " paused=" + (paused || pause) + " cancelled=" + total.cancelled);
+                + " superseded=" + total.superseded + " attempted=" + total.attempted + " transferred=" + total.transferred + " validated=" + total.validated + " persisted=" + total.persisted + " paused=" + (paused || pause) + " cancelled=" + total.cancelled);
     }
 
     private static void add(DirectConsolidation.RunReport total, DirectConsolidation.RunReport r) {
         total.attempted += r.attempted;
+        total.transferred += r.transferred;
+        total.validated += r.validated;
+        total.persisted += r.persisted;
         total.imported += r.imported;
         total.alreadyPresent += r.alreadyPresent;
         total.unavailable += r.unavailable;
         total.refused += r.refused;
         total.ambiguous += r.ambiguous;
         total.failed += r.failed;
-        total.stoppedOnFailure |= r.stoppedOnFailure;
+        total.superseded += r.superseded;
         total.cancelled |= r.cancelled;
         total.drained = r.drained;
     }
@@ -147,6 +141,7 @@ public final class DirectConsolidationWorker {
             connection.setReadTimeout(30_000);
             connection.setRequestProperty("Accept-Encoding", "identity");
             int code = connection.getResponseCode();
+            DirectTrace.summary("cdn_http", "code=" + code + " hop=" + hop);
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                 current = connection.getHeaderField("Location");
                 connection.disconnect();

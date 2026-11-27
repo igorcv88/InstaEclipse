@@ -45,7 +45,7 @@ public final class DirectStoreScanner {
     public static final class Result {
         /** {@code offered} counts parts the module accepted; a refused page stops the scan. */
         public int rows, offered, refusedRows;
-        public int fetchable, queued, alreadyStored, skipped;
+        public int fetchable, discovered, queued, alreadyStored, skipped;
         public boolean accepted;
         /** True when a read limit stopped the scan before the cache was exhausted. */
         public boolean truncated;
@@ -82,6 +82,7 @@ public final class DirectStoreScanner {
                     total.rows += one.rows;
                     total.offered += one.offered;
                     total.fetchable += one.fetchable;
+                    total.discovered += one.discovered;
                     total.queued += one.queued;
                     total.alreadyStored += one.alreadyStored;
                     total.skipped += one.skipped;
@@ -148,7 +149,6 @@ public final class DirectStoreScanner {
                 return result;
             }
             List<String[]> page = new ArrayList<>();
-            java.util.Set<String> seen = new java.util.HashSet<>();
             long afterTs = -1;
             String afterId = "";
             while (result.rows < MAX_ROWS_PER_SCAN) {
@@ -167,18 +167,19 @@ public final class DirectStoreScanner {
                     }
                 }
                 if (page.isEmpty()) break;
-                List<DirectStoreRow> rows = new ArrayList<>();
+                java.util.Map<String, DirectStoreRow> rows = new java.util.LinkedHashMap<>();
                 for (String[] raw : page) {
                     result.rows++;
                     afterTs = Long.parseLong(raw[2]);
                     afterId = raw[0];
-                    if (!seen.add(raw[0])) continue; // the same message stored twice by the client
                     DirectStoreRow row = DirectStoreRow.parse(accountId, threadId, raw[0], raw[1], afterTs, raw[3]);
+                    DirectTrace.event(accountId, threadId, raw[0], "discovery",
+                            "observer=local_db result=" + (row == null ? "parser_refused" : "parsed"));
                     if (row == null) result.refusedRows++;
-                    else rows.add(row);
+                    else rows.merge(row.itemId, row, DirectStoreRow::mergeObservation);
                 }
                 // IPC pages are capped at MAX_OFFER_PARTS; carousels can exceed it within one DB page.
-                for (List<DirectStoreRow> send : DirectStoreRow.batches(rows,
+                for (List<DirectStoreRow> send : DirectStoreRow.batches(new ArrayList<>(rows.values()),
                         ps.reso.instaeclipse.library.core.DirectConsolidation.MAX_OFFER_PARTS)) {
                     Bundle reply = offerPage(context, accountId, threadId, send, true);
                     if (reply == null) {
@@ -190,6 +191,7 @@ public final class DirectStoreScanner {
                         return result;
                     }
                     result.accepted = true;
+                    result.discovered += reply.getInt(DirectOfferContract.DISCOVERED);
                     result.queued += reply.getInt(DirectOfferContract.QUEUED);
                     result.alreadyStored += reply.getInt(DirectOfferContract.ALREADY_STORED);
                     result.skipped += reply.getInt(DirectOfferContract.SKIPPED);
@@ -247,11 +249,25 @@ public final class DirectStoreScanner {
         extras.putStringArrayList(DirectOfferContract.FLAGS, flags);
         extras.putLongArray(DirectOfferContract.TIMESTAMPS, timestamps);
         extras.putBoolean(DirectOfferContract.EXPLICIT, explicit);
+        Bundle reply = null;
         try {
-            return context.getContentResolver().call(ConversationGalleryProvider.URI,
+            reply = context.getContentResolver().call(ConversationGalleryProvider.URI,
                     DirectOfferContract.METHOD, null, extras);
         } catch (RuntimeException unavailable) {
-            return null;
+            DirectTrace.summary("ipc_error", "reason=" + unavailable.getClass().getSimpleName());
         }
+        if (DirectTrace.enabled()) {
+            String status = reply == null ? "unavailable"
+                    : reply.getBoolean(DirectOfferContract.ACCEPTED) ? "accepted" : "refused";
+            for (DirectStoreRow row : rows) {
+                for (DirectStoreRow.Part part : row.parts) {
+                    DirectTrace.event(account, thread, part.identity.messageKey, "ipc",
+                            "result=" + status + " from_me=" + part.identity.fromMe
+                                    + " candidate=" + (part.best != null) + " fetchable=" + part.fetchAllowed
+                                    + " mode=" + (explicit ? "manual" : "auto"));
+                }
+            }
+        }
+        return reply;
     }
 }

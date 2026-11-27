@@ -60,8 +60,8 @@ public final class DirectConsolidation {
     }
 
     public static final class RunReport {
-        public int attempted, imported, alreadyPresent, unavailable, refused, ambiguous, failed;
-        public boolean stoppedOnFailure, cancelled;
+        public int attempted, transferred, validated, persisted, imported, alreadyPresent, unavailable, refused, ambiguous, failed, superseded;
+        public boolean cancelled;
         /** True only when no retryable item is left at the end of the run. */
         public boolean drained;
     }
@@ -69,8 +69,14 @@ public final class DirectConsolidation {
     private final MediaLibrary library;
     private final DirectCoverage coverage;
     private final DirectCapture capture;
+    private final DirectProgress progress;
 
     public DirectConsolidation(MediaLibrary library) {
+        this(library, DirectProgress.NONE);
+    }
+
+    public DirectConsolidation(MediaLibrary library, DirectProgress progress) {
+        this.progress = progress;
         this.library = library;
         this.coverage = new DirectCoverage(library);
         this.capture = new DirectCapture(library, coverage);
@@ -108,29 +114,35 @@ public final class DirectConsolidation {
     }
 
     public static final class OfferReport {
-        public int queued, alreadyStored, skipped;
+        public int discovered, queued, alreadyStored, skipped;
     }
 
     /** Snapshot of just this offer's identities, before starting its worker. */
     public OfferReport offerWithReport(String packageName, String accountKey, String threadKey,
                                        List<Offer> offers) throws IOException {
-        offer(packageName, accountKey, threadKey, offers, false);
         OfferReport report = new OfferReport();
+        report.discovered = offer(packageName, accountKey, threadKey, offers, false);
         try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
             for (Offer offer : offers) {
                 DirectCoverage.Discovered identity = offer.identity;
                 LibraryItem kept = library.lookup(packageName, accountKey, threadKey, identity.messageKey,
                         identity.fromMe);
+                String disposition;
                 if (kept != null && kept.isAvailable() && library.blobs().existsWithSize(kept.sha256, kept.sizeBytes)) {
                     report.alreadyStored++;
+                    disposition = "already_persisted";
                 } else if (!library.sql().query("SELECT 1 " + WORK
                                 + "AND a.account_key=? AND d.thread_key=? AND d.message_key=? AND d.from_me=? LIMIT 1",
                         packageName, DirectCoverage.MAX_ATTEMPTS, accountKey, threadKey, identity.messageKey,
                         identity.fromMe ? 1 : 0).isEmpty()) {
                     report.queued++;
+                    disposition = "eligible";
                 } else {
                     report.skipped++;
+                    disposition = "not_eligible";
                 }
+                progress.event(accountKey, threadKey, identity.messageKey, "catalog_offer",
+                        "disposition=" + disposition + " from_me=" + identity.fromMe);
             }
         }
         return report;
@@ -145,9 +157,11 @@ public final class DirectConsolidation {
                             + "state=CASE WHEN state='unavailable' AND (source_url IS NULL OR source_url<>?) "
                             + "THEN 'pending' ELSE state END, "
                             + "attempts=CASE WHEN state='failed' AND source_url<>? THEN 0 ELSE attempts END, "
-                            + "source_url=?, source_seen_at=? WHERE account_id=? "
+                            + "source_seen_at=CASE WHEN source_url=? AND state IN ('pending','failed') "
+                            + "THEN source_seen_at ELSE MAX(COALESCE(source_seen_at,0)+1,?) END, "
+                            + "source_url=? WHERE account_id=? "
                             + "AND thread_key=? AND message_key=? AND from_me=? AND (view_once=0 OR ?=1 OR from_me=1)",
-                    url, url, url, library.now(), account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0,
+                    url, url, url, library.now(), url, account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0,
                     identity.viewOnce ? 1 : 0);
         }
     }
@@ -196,16 +210,21 @@ public final class DirectConsolidation {
     }
 
     /**
-     * Fetches and imports up to {@code budget} items, oldest first. The first transient failure
-     * stops the run so the item is retried next time; an expired URL is UNAVAILABLE until the
-     * scanner offers a fresh one. {@code cancelled} is checked between items and during every
+     * Fetches and imports up to {@code budget} items. New work precedes retries, oldest first
+     * within each class. An expired URL is UNAVAILABLE until a fresh one is offered. {@code cancelled} is checked between items and during every
      * read, so a pause stops a large video mid-transfer without recording an outcome.
      */
     public RunReport run(String packageName, Fetcher fetcher, int budget, BooleanSupplier cancelled) throws IOException {
         RunReport report = new RunReport();
+        DirectProgress trackImport = (account, thread, part, stage, detail) -> {
+            if ("transfer_complete".equals(stage)) report.transferred++;
+            if ("validated".equals(stage)) report.validated++;
+            if ("persisted".equals(stage) && !detail.startsWith("status=ALREADY_PRESENT ")) report.persisted++;
+            progress.event(account, thread, part, stage, detail);
+        };
         List<Map<String, Object>> work = library.sql().query("SELECT d.id, d.state, d.view_once, d.thread_key, d.message_key, d.from_me, "
-                        + "d.media_kind, d.message_timestamp, d.source_url, a.account_key " + WORK
-                        + "ORDER BY d.message_timestamp ASC, d.id ASC LIMIT ?",
+                        + "d.media_kind, d.message_timestamp, d.source_url, d.source_seen_at, a.account_key " + WORK
+                        + "ORDER BY CASE WHEN d.state='failed' THEN 1 ELSE 0 END, d.message_timestamp ASC, d.id ASC LIMIT ?",
                 packageName, DirectCoverage.MAX_ATTEMPTS, Math.max(1, budget));
         for (Map<String, Object> row : work) {
             if (cancelled.getAsBoolean()) {
@@ -215,11 +234,13 @@ public final class DirectConsolidation {
             String account = Sql.Rows.getString(row, "account_key");
             String thread = Sql.Rows.getString(row, "thread_key");
             String url = Sql.Rows.getString(row, "source_url");
+            long sourceVersion = Sql.Rows.getLong(row, "source_seen_at");
             DirectCoverage.Discovered identity = new DirectCoverage.Discovered(
                     Sql.Rows.getString(row, "message_key"), Sql.Rows.getLong(row, "from_me") != 0,
                     Sql.Rows.getString(row, "media_kind"), Sql.Rows.getLong(row, "view_once") != 0,
                     Sql.Rows.getLong(row, "message_timestamp"));
             report.attempted++;
+            progress.event(account, thread, identity.messageKey, "transfer_start", "source_version=" + sourceVersion + " from_me=" + identity.fromMe);
             DirectCapture.Outcome outcome;
             try {
                 if (!DirectStoreRow.isCdnUrl(url)) {
@@ -231,11 +252,17 @@ public final class DirectConsolidation {
                     } catch (Cancelled paused) {
                         throw paused;
                     } catch (IOException transientFailure) {
-                        coverage.settle(packageName, account, thread, identity, DirectCoverage.State.FAILED, null, "fetch");
-                        report.failed++;
-                        report.stoppedOnFailure = true;
-                        break;
+                        DirectCoverage.State state = coverage.settleTransfer(packageName, account, thread,
+                                identity, DirectCoverage.State.FAILED, null, "fetch", url, sourceVersion);
+                        progress.event(account, thread, identity.messageKey, "outcome",
+                                "state=" + state + " reason=fetch_exception");
+                        if (state == DirectCoverage.State.PENDING) report.superseded++;
+                        else report.failed++;
+                        finishRepair(row, url);
+                        continue;
                     }
+                    progress.event(account, thread, identity.messageKey, "transfer_response",
+                            opened == null ? "body=unavailable" : "body=opened");
                     InputStream body = opened == null ? null : new FilterInputStream(opened) {
                         @Override public int read() throws IOException {
                             if (cancelled.getAsBoolean()) throw new Cancelled();
@@ -247,36 +274,41 @@ public final class DirectConsolidation {
                             return super.read(buffer, offset, length);
                         }
                     };
-                    outcome = capture.capture(packageName, account, thread, identity, body == null ? null : () -> body);
+                    outcome = capture.capture(packageName, account, thread, identity, body == null ? null : () -> body, url, sourceVersion, trackImport);
                 }
             } catch (Cancelled paused) {
+                progress.event(account, thread, identity.messageKey, "outcome", "state=paused");
                 report.attempted--;
                 report.cancelled = true;
                 break;
             }
-            String before = Sql.Rows.getString(row, "state");
-            if ("imported".equals(before) || "already_present".equals(before)) {
-                // A repair attempt: the next one needs a newer URL from a later scan.
-                library.sql().update("UPDATE direct_items SET settled_at=? WHERE id=?", library.now(),
-                        Sql.Rows.getLong(row, "id"));
-            }
+            finishRepair(row, url);
+            progress.event(account, thread, identity.messageKey, "outcome",
+                    "state=" + outcome.state + " reason=" + outcome.error);
             switch (outcome.state) {
                 case IMPORTED -> report.imported++;
                 case ALREADY_PRESENT -> report.alreadyPresent++;
                 case UNAVAILABLE -> report.unavailable++;
                 case REFUSED -> report.refused++;
                 case AMBIGUOUS -> report.ambiguous++;
-                case FAILED -> {
-                    report.failed++;
-                    report.stoppedOnFailure = true;
-                }
-                default -> { }
+                case FAILED -> report.failed++;
+                case PENDING -> report.superseded++;
             }
-            if (report.stoppedOnFailure) break;
         }
-        report.drained = !report.stoppedOnFailure && !report.cancelled
+        report.drained = !report.cancelled
                 && library.sql().query("SELECT 1 " + WORK + "LIMIT 1", packageName, DirectCoverage.MAX_ATTEMPTS).isEmpty();
         return report;
+    }
+
+    private void finishRepair(Map<String, Object> row, String attemptedSource) throws IOException {
+        String before = Sql.Rows.getString(row, "state");
+        if (!"imported".equals(before) && !"already_present".equals(before)) return;
+        try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
+            library.sql().update("UPDATE direct_items SET settled_at=MAX(?,source_seen_at) "
+                            + "WHERE id=? AND source_url=? AND source_seen_at=?",
+                    library.now(), Sql.Rows.getLong(row, "id"), attemptedSource,
+                    Sql.Rows.getLong(row, "source_seen_at"));
+        }
     }
 
     /** Max parts in one IPC offer. */

@@ -62,6 +62,12 @@ public final class DirectLibraryHook {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             ModuleLog.line("(IE|MediaLibrary) shared media unavailable: " + mismatch);
         }
+        try {
+            DirectInlinePreview.install(loader);
+            ModuleLog.line("(IE|MediaLibrary) 454 conventional inline preview installed");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+            ModuleLog.line("(IE|MediaLibrary) inline preview unavailable: " + mismatch.getClass().getSimpleName());
+        }
         DirectLiveCapture.install(context, loader);
     }
 
@@ -112,6 +118,8 @@ public final class DirectLibraryHook {
                             (String) serverId.get(nativeId), (String) serverId.get(callback),
                             enumName(kind.get(nativeId)), enumName(kind.get(callback)));
                     if (selection == null) return;
+                    DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey,
+                            "save_selection", "result=matched from_me=" + selection.fromMe);
                     IeDialog prompt = new IeDialog(activity).title(I18n.t(activity, R.string.media_library_message_title))
                             .message(I18n.t(activity, R.string.media_library_message_offer));
                     prompt.primary(I18n.t(activity, R.string.media_library_title),

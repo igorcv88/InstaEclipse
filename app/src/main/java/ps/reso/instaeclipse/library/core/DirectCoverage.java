@@ -198,17 +198,24 @@ public final class DirectCoverage {
      */
     public State settle(String packageName, String accountKey, String threadKey, Discovered item, State outcome,
                         String itemUuid, String error) throws IOException {
-        return settle(packageName, accountKey, threadKey, item, outcome, itemUuid, error, false);
+        return settle(packageName, accountKey, threadKey, item, outcome, itemUuid, error, false, null, 0L);
     }
 
     /** A row without a source must not cancel work for an earlier usable offer. */
     State settleMissingSourceOffer(String packageName, String accountKey, String threadKey,
                                    Discovered item, String error) throws IOException {
-        return settle(packageName, accountKey, threadKey, item, State.UNAVAILABLE, null, error, true);
+        return settle(packageName, accountKey, threadKey, item, State.UNAVAILABLE, null, error, true, null, 0L);
+    }
+
+    /** A failed transfer must not settle a newer source for the same message. */
+    State settleTransfer(String packageName, String accountKey, String threadKey, Discovered item,
+                         State outcome, String itemUuid, String error, String attemptedSource, long sourceVersion) throws IOException {
+        return settle(packageName, accountKey, threadKey, item, outcome, itemUuid, error, false,
+                attemptedSource, sourceVersion);
     }
 
     private State settle(String packageName, String accountKey, String threadKey, Discovered item, State outcome,
-                         String itemUuid, String error, boolean preserveSource) throws IOException {
+                         String itemUuid, String error, boolean preserveSource, String attemptedSource, long sourceVersion) throws IOException {
         if (outcome == State.PENDING) throw new IllegalArgumentException("PENDING is not an outcome");
         ImportRequest.forConversation(packageName, accountKey, threadKey).validate();
         Sql sql = library.sql();
@@ -216,7 +223,7 @@ public final class DirectCoverage {
             return sql.inTransaction(() -> {
                 long account = library.ensureAccount(packageName, accountKey);
                 long now = library.now();
-                List<Map<String, Object>> rows = sql.query("SELECT state, source_url FROM direct_items "
+                List<Map<String, Object>> rows = sql.query("SELECT state, source_url, source_seen_at FROM direct_items "
                                 + "WHERE account_id=? AND thread_key=? AND message_key=? AND from_me=?",
                         account, threadKey, item.messageKey, item.fromMe ? 1 : 0);
                 if (rows.isEmpty()) {
@@ -225,16 +232,22 @@ public final class DirectCoverage {
                                     + "VALUES (?,?,?,?,?,?,?,?,?,'pending')",
                             account, threadKey, item.messageKey, item.fromMe ? 1 : 0, item.mediaKind,
                             item.viewOnce ? 1 : 0, item.timestamp, now, now);
-                    rows = sql.query("SELECT state, source_url FROM direct_items WHERE account_id=? AND thread_key=? "
+                    rows = sql.query("SELECT state, source_url, source_seen_at FROM direct_items WHERE account_id=? AND thread_key=? "
                             + "AND message_key=? AND from_me=?", account, threadKey, item.messageKey, item.fromMe ? 1 : 0);
                 }
                 State current = State.of(Sql.Rows.getString(rows.get(0), "state"));
+                String source = Sql.Rows.getString(rows.get(0), "source_url");
+                long currentVersion = Sql.Rows.getLong(rows.get(0), "source_seen_at");
+                if (attemptedSource != null && itemUuid == null
+                        && (!attemptedSource.equals(source) || sourceVersion != currentVersion)) {
+                    return State.PENDING; // the current source retains its own work state
+                }
                 if (preserveSource && (current == State.PENDING || current == State.FAILED)
-                        && Sql.Rows.getString(rows.get(0), "source_url") != null) return current;
+                        && source != null) return current;
                 State next = transition(current, outcome);
                 if (next == current && current.isFinal()) return current;
                 sql.update("UPDATE direct_items SET state=?, attempts=attempts+?, last_error=?, "
-                                + "item_uuid=COALESCE(?, item_uuid), settled_at=? "
+                                + "item_uuid=COALESCE(?, item_uuid), settled_at=MAX(?, COALESCE(source_seen_at,0)) "
                                 + "WHERE account_id=? AND thread_key=? AND message_key=? AND from_me=?",
                         next.column(), outcome == State.FAILED ? 1 : 0,
                         error, itemUuid,

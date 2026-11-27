@@ -17,22 +17,18 @@ public final class DirectLiveOfferQueue {
         public final DirectStoreRow row;
         private final String key;
         private final List<String> state;
-        private final int fetchable;
         private int attempts;
 
         private Entry(DirectStoreRow row) {
             this.row = row;
             key = row.accountId + '|' + row.threadId + '|' + row.itemId;
             state = new ArrayList<>();
-            int available = 0;
             for (DirectStoreRow.Part part : row.parts) {
                 state.add(part.identity.messageKey);
                 state.add(part.identity.mediaKind);
                 state.add(part.identity.fromMe + ":" + part.identity.viewOnce);
                 state.add(part.fetchAllowed ? part.best.url : "");
-                if (part.fetchAllowed) available++;
             }
-            fetchable = available;
         }
     }
 
@@ -42,20 +38,16 @@ public final class DirectLiveOfferQueue {
     public synchronized Add add(DirectStoreRow row) {
         Entry next = new Entry(row);
         Entry previous = pending.get(next.key);
-        if (previous != null && (previous.state.equals(next.state) || keepsAvailableSource(previous, next))) {
+        if (previous != null) {
+            next = new Entry(previous.row.mergeObservation(row));
+            if (previous.state.equals(next.state)) return Add.DUPLICATE;
+        } else if (next.state.equals(acknowledged.get(next.key))) {
             return Add.DUPLICATE;
         }
-        if (next.state.equals(acknowledged.get(next.key))) return Add.DUPLICATE;
         if (previous == null && pending.size() >= MAX_PENDING) return Add.FULL;
 
         pending.put(next.key, next);
         return Add.QUEUED;
-    }
-
-    private static boolean keepsAvailableSource(Entry previous, Entry next) {
-        // An older page model can arrive after the row learned an authorized source.
-        return previous.fetchable > 0 && next.fetchable == 0
-                && previous.row.viewOnce == next.row.viewOnce && previous.row.senderId.equals(next.row.senderId);
     }
 
     public synchronized List<Entry> snapshot() {

@@ -189,17 +189,17 @@ public final class DirectConsolidationTest {
             cdn.failing.add(cdn("r4"));
             MediaLibrary second = fixture.open();
             DirectConsolidation.RunReport broken = new DirectConsolidation(second).run(INSTAGRAM, cdn, 50, () -> false);
-            assertTrue(broken.stoppedOnFailure);
-            assertEquals(1, broken.imported);
+            assertEquals(1, broken.failed);
+            assertEquals(6, broken.imported);
             assertFalse(broken.drained);
             DirectCoverage.Report mid = new DirectConsolidation(second).coverage().report(INSTAGRAM, ME, null);
-            assertEquals(4, mid.processed);
+            assertEquals(9, mid.processed);
             assertFalse(mid.complete());
             // Another process finishes; everything is stored exactly once.
             MediaLibrary third = fixture.open();
             DirectConsolidation.RunReport rest = new DirectConsolidation(third).run(INSTAGRAM, cdn, 50, () -> false);
             assertTrue(rest.drained);
-            assertEquals(6, rest.imported);
+            assertEquals(1, rest.imported);
             assertEquals(10, third.listChat(INSTAGRAM, ME, THREAD).size());
             assertTrue(new DirectConsolidation(third).coverage().report(INSTAGRAM, ME, null).complete());
             assertEquals(11, cdn.requested.size());
@@ -473,6 +473,127 @@ public final class DirectConsolidationTest {
                     row("62010", PEER, "media", imageMedia("fresh-source")));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(refreshed), false);
             assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
+    @Test public void anExpiredInFlightSourceDoesNotSettleItsReplacement() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            DirectConsolidation consolidation = new DirectConsolidation(library);
+            String id = "63001";
+            DirectStoreRow old = DirectStoreRow.parse(ME, THREAD, id, "media", 1,
+                    row(id, PEER, "media", imageMedia("old-in-flight")));
+            DirectStoreRow fresh = DirectStoreRow.parse(ME, THREAD, id, "media", 1,
+                    row(id, PEER, "media", imageMedia("fresh-in-flight")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(old), false);
+            consolidation.run(INSTAGRAM, url -> {
+                assertEquals(cdn("old-in-flight"), url);
+                fixture.clock.incrementAndGet();
+                consolidation.offer(INSTAGRAM, ME, THREAD, offers(fresh), false);
+                fixture.clock.incrementAndGet();
+                return null;
+            }, 10, () -> false);
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("fresh-in-flight"), jpeg(63001));
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
+    @Test public void aTransientFailureDoesNotBlockLaterWorkInTheSamePass() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            DirectStoreRow old = DirectStoreRow.parse(ME, THREAD, "63002", "media", 1_000,
+                    row("63002", PEER, "media", imageMedia("reset")));
+            DirectStoreRow good = DirectStoreRow.parse(ME, THREAD, "63003", "media", 2_000,
+                    row("63003", PEER, "media", imageMedia("valid")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(old, good), false);
+            FakeCdn cdn = new FakeCdn();
+            cdn.failing.add(cdn("reset"));
+            cdn.objects.put(cdn("valid"), jpeg(63003));
+            DirectConsolidation.RunReport report = consolidation.run(INSTAGRAM, cdn, 10, () -> false);
+            assertEquals(1, report.failed);
+            assertEquals(1, report.imported);
+        }
+    }
+
+    @Test public void aParentResolvesEachUnambiguousCarouselPartInItsOwnScope() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            String parent = "63100";
+            for (String key : List.of(parent + ":1", parent + ":0", parent + ":20", parent + "9:0")) {
+                library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, key, false, 1, false),
+                        () -> new ByteArrayInputStream(jpeg(101)));
+            }
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, parent + ":1", true, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(102)));
+            ImportRequest scope = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, parent, false);
+            assertEquals(List.of(parent + ":0", parent + ":1"),
+                    library.listMessage(scope).stream().map(item -> item.messageKey).toList());
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, parent + ":1", false, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(103)));
+            assertEquals(List.of(parent + ":0"),
+                    library.listMessage(scope).stream().map(item -> item.messageKey).toList());
+            assertNull(library.inlineCopy(scope));
+        }
+    }
+
+    @Test public void offerDownloadValidationAndPersistenceAreDifferentEvents() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            List<String> events = new ArrayList<>();
+            DirectConsolidation consolidation = new DirectConsolidation(library,
+                    (account, thread, part, stage, detail) -> {
+                        assertEquals(ME, account);
+                        assertEquals(THREAD, thread);
+                        events.add(part + ":" + stage);
+                        if ("persisted".equals(stage)) {
+                            assertNotNull(library.lookup(INSTAGRAM, ME, THREAD, part, false));
+                        }
+                    });
+            DirectStoreRow bad = DirectStoreRow.parse(ME, THREAD, "63101", "media", 1,
+                    row("63101", PEER, "media", imageMedia("unsupported")));
+            DirectStoreRow good = DirectStoreRow.parse(ME, THREAD, "63102", "media", 2,
+                    row("63102", PEER, "media", imageMedia("complete")));
+            DirectConsolidation.OfferReport offered = consolidation.offerWithReport(INSTAGRAM, ME, THREAD,
+                    offers(bad, good));
+            assertEquals(2, offered.discovered);
+            assertEquals(2, offered.queued);
+            assertEquals(2, events.size());
+            assertTrue(library.listAll(false).isEmpty());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("unsupported"), new byte[] {10, 20, 30});
+            cdn.objects.put(cdn("complete"), jpeg(63102));
+            DirectConsolidation.RunReport report = consolidation.run(INSTAGRAM, cdn, 10, () -> false);
+            assertEquals(2, report.transferred);
+            assertEquals(1, report.validated);
+            assertEquals(1, report.persisted);
+            assertEquals(List.of("63101:catalog_offer", "63102:catalog_offer",
+                    "63101:transfer_start", "63101:transfer_response", "63101:transfer_complete", "63101:outcome",
+                    "63102:transfer_start", "63102:transfer_response", "63102:transfer_complete",
+                    "63102:validated", "63102:persisted", "63102:outcome"), events);
+        }
+    }
+
+    @Test public void inlineRequiresAnExactOwnedOrExplicitlyLinkedCopy() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            ImportRequest received = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63103", false);
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63103", false, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(105)));
+            assertNull(library.inlineCopy(received));
+            library.importMedia(received, () -> new ByteArrayInputStream(jpeg(105)));
+            assertNotNull(library.inlineCopy(received));
+            library.importMedia(received, () -> new ByteArrayInputStream(jpeg(106)));
+            assertNull(library.inlineCopy(received)); // Two conflicting copies.
+            ImportRequest manual = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63104", false);
+            library.importMedia(manual, () -> new ByteArrayInputStream(jpeg(107)));
+            assertNotNull(library.inlineCopy(manual));
+            assertNull(library.inlineCopy(ImportRequest.forMessage(INSTAGRAM, ME, "other", "63104", false)));
+            assertNull(library.inlineCopy(ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63104", true)));
+            ImportRequest own = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63105", true);
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63105", true, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(108)));
+            assertNotNull(library.inlineCopy(own));
         }
     }
 

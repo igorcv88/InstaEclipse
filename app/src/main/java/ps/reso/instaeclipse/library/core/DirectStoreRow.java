@@ -98,11 +98,11 @@ public final class DirectStoreRow {
                 partsByKey.put(part.identity.messageKey, part);
             }
         }
-        List<Part> merged = List.copyOf(partsByKey.values());
+        List<Part> merged = new ArrayList<>(partsByKey.values());
         if (merged.equals(latest.parts)) return latest;
         if (merged.equals(parts)) return this;
         return new DirectStoreRow(accountId, threadId, itemId, latest.messageType, senderId,
-                viewOnce, seenByViewer || latest.seenByViewer, latest.timestampMs, merged);
+                viewOnce, seenByViewer || latest.seenByViewer, latest.timestampMs, Collections.unmodifiableList(merged));
     }
 
     public static boolean isMediaType(String type) {

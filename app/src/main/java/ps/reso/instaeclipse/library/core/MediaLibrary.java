@@ -264,12 +264,16 @@ public final class MediaLibrary {
      * their own part. A part key itself is never treated as a parent.
      */
     public List<LibraryItem> listMessage(ImportRequest scope) {
-        if (scope.messageKey == null) return List.of();
+        if (scope.messageKey == null) return java.util.Collections.emptyList();
         Long account = findAccount(scope.packageName, scope.accountKey);
-        if (account == null) return List.of();
+        if (account == null) return java.util.Collections.emptyList();
         String parent = scope.messageKey;
         String prefix = parent + ":";
-        List<Object> args = new ArrayList<>(List.of(account, scope.threadKey, scope.fromMe ? 1 : 0, parent));
+        List<Object> args = new ArrayList<>();
+        args.add(account);
+        args.add(scope.threadKey);
+        args.add(scope.fromMe ? 1 : 0);
+        args.add(parent);
         StringBuilder filter = new StringBuilder("i.message_key=?");
         if (parent.indexOf(':') < 0) {
             filter.append(" OR (i.origin='captured' AND i.message_key IN (");

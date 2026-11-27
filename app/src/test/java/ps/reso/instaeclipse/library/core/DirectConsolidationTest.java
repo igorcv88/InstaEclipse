@@ -459,11 +459,11 @@ public final class DirectConsolidationTest {
         try (LibraryFixture fixture = new LibraryFixture()) {
             DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
             FakeCdn cdn = new FakeCdn();
-            cdn.failing.add(cdn("bad-source"));
             DirectStoreRow failed = DirectStoreRow.parse(ME, THREAD, "62010", "media", 1,
                     row("62010", PEER, "media", imageMedia("bad-source")));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(failed), false);
             for (int i = 0; i < DirectCoverage.MAX_ATTEMPTS; i++) {
+                cdn.failing.add(cdn("bad-source"));
                 assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).failed);
             }
             assertEquals(0, consolidation.run(INSTAGRAM, cdn, 10, () -> false).attempted);

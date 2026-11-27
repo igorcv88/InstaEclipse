@@ -248,7 +248,11 @@ public final class LibraryBackup {
         try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
             long newBytes = 0;
             for (BlobStore.Staged blob : staged.values()) {
-                if (!library.blobs().verify(blob.sha256, blob.size)) newBytes += blob.size;
+                if (library.blobs().verify(blob.sha256, blob.size)) continue;
+                // A replacement overwrites a damaged blob that usedBytes() already counts.
+                long accounted = Sql.Rows.getLong(library.sql().query("SELECT COALESCE(SUM(size_bytes),0) AS n "
+                        + "FROM blobs WHERE sha256=? AND state!='missing'", blob.sha256).get(0), "n");
+                newBytes += blob.size - accounted;
             }
             if (library.usedBytes() + newBytes > library.quotaBytes()) {
                 throw new LibraryException(LibraryException.Code.QUOTA_EXCEEDED,

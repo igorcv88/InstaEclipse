@@ -59,7 +59,7 @@ public final class LibraryIntegrity {
                     referenced.add(item.sha256);
                     File file = blobs.path(item.sha256);
                     if (!file.isFile()) report.recordsWithoutFile.add(item.uuid);
-                    else if (file.length() != item.sizeBytes
+                    else if ("corrupt".equals(item.blobState) || file.length() != item.sizeBytes
                             || (deep && !blobs.verify(item.sha256, item.sizeBytes))) report.damaged.add(item.uuid);
                     if ("unknown".equals(item.origin)) report.unknownOrigin++;
                     if (item.messageKey == null) report.unlinked++;

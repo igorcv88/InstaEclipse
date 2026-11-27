@@ -242,11 +242,8 @@ public final class DirectLiveCapture {
     private static void installNativePageCapture(ClassLoader loader) throws ReflectiveOperationException {
         Class<?> fetch = Class.forName("X.0AYL", false, loader);
         Class<?> response = Class.forName("X.0Ir8", false, loader);
-        Method responseMethod = fetch.getDeclaredMethod("A0x");
-        Method requestThread = fetch.getDeclaredMethod("Dpk");
-        if (responseMethod.getReturnType() != response || requestThread.getReturnType() != String.class) {
-            throw new NoSuchMethodException("Thread page");
-        }
+        Method responseMethod = findNoArg(fetch, "A0x", response);
+        Method requestThread = findNoArg(fetch, "Dpk", String.class);
         Field requestSession = field(fetch.getSuperclass(), "A04", SESSION);
         Field responseError = field(response, "A04", "com.instagram.realtimeclient.DirectApiError");
         Field responsePage = field(response, "A02", "X.0R7T");
@@ -404,6 +401,16 @@ public final class DirectLiveCapture {
                 scheduleFlush();
             }
         }
+    }
+
+    private static Method findNoArg(Class<?> owner, String name, Class<?> result) throws NoSuchMethodException {
+        for (Method method : owner.getDeclaredMethods()) {
+            if (method.getName().equals(name) && method.getParameterCount() == 0
+                    && method.getReturnType() == result && !Modifier.isStatic(method.getModifiers())) {
+                return method;
+            }
+        }
+        throw new NoSuchMethodException(name);
     }
 
     private static Field field(Class<?> owner, String name, String type) throws ReflectiveOperationException {

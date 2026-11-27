@@ -69,6 +69,7 @@ public final class DirectLiveCapture {
         }
         if (count <= 3 || count % 100 == 0) {
             ModuleLog.line("(IE|MediaLibrary) live capture discarded reason=" + reason + " count=" + count);
+            DirectTrace.summary("discard", "reason=" + reason + " count=" + count);
         }
     }
 
@@ -397,7 +398,7 @@ public final class DirectLiveCapture {
 
     private static void captureNativePage(List<?> items, String account, String thread,
                                           String source, String details) {
-        int resolved = 0;
+        int queued = 0;
         try {
             if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
             for (Object model : items) {
@@ -407,13 +408,15 @@ public final class DirectLiveCapture {
                 }
                 try {
                     String type = modelType(model);
-                    if (isMediaType(type) && captureScoped(model, account, thread, type, source)) resolved++;
+                    if (isMediaType(type) && captureScoped(model, account, thread, type, source)) queued++;
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_item_" + failure.getClass().getSimpleName());
                 }
             }
-            ModuleLog.line("(IE|MediaLibrary) " + source + " items=" + items.size()
-                    + " media_resolved=" + resolved + details);
+            String summary = "observer=" + source + " items=" + items.size()
+                    + " media_queued=" + queued + details;
+            ModuleLog.line("(IE|MediaLibrary) " + summary);
+            DirectTrace.summary("page_summary", summary);
         } finally {
             pendingPages.decrementAndGet();
         }

@@ -128,21 +128,27 @@ public final class DirectConsolidation {
                 LibraryItem kept = library.lookup(packageName, accountKey, threadKey, identity.messageKey,
                         identity.fromMe);
                 String disposition;
+                long sourceVersion = 0L;
                 if (kept != null && kept.isAvailable() && library.blobs().existsWithSize(kept.sha256, kept.sizeBytes)) {
                     report.alreadyStored++;
                     disposition = "already_persisted";
-                } else if (!library.sql().query("SELECT 1 " + WORK
-                                + "AND a.account_key=? AND d.thread_key=? AND d.message_key=? AND d.from_me=? LIMIT 1",
-                        packageName, DirectCoverage.MAX_ATTEMPTS, accountKey, threadKey, identity.messageKey,
-                        identity.fromMe ? 1 : 0).isEmpty()) {
-                    report.queued++;
-                    disposition = "eligible";
                 } else {
-                    report.skipped++;
-                    disposition = "not_eligible";
+                    List<Map<String, Object>> work = library.sql().query("SELECT d.source_seen_at " + WORK
+                                    + "AND a.account_key=? AND d.thread_key=? AND d.message_key=? AND d.from_me=? LIMIT 1",
+                            packageName, DirectCoverage.MAX_ATTEMPTS, accountKey, threadKey, identity.messageKey,
+                            identity.fromMe ? 1 : 0);
+                    if (work.isEmpty()) {
+                        report.skipped++;
+                        disposition = "not_eligible";
+                    } else {
+                        report.queued++;
+                        disposition = "eligible";
+                        sourceVersion = Sql.Rows.getLong(work.get(0), "source_seen_at");
+                    }
                 }
                 progress.event(accountKey, threadKey, identity.messageKey, "catalog_offer",
-                        "disposition=" + disposition + " from_me=" + identity.fromMe);
+                        "disposition=" + disposition + " from_me=" + identity.fromMe
+                                + " source_version=" + sourceVersion);
             }
         }
         return report;

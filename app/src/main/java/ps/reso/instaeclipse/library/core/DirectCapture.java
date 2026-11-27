@@ -46,8 +46,9 @@ public final class DirectCapture {
         if (source == null) {
             DirectCoverage.State state = coverage.settleTransfer(packageName, accountKey, threadKey, identity,
                     DirectCoverage.State.UNAVAILABLE, null, "no_bytes", attemptedSource, sourceVersion);
-            return new Outcome(state == DirectCoverage.State.PENDING ? state : DirectCoverage.State.UNAVAILABLE,
-                    null, "no_bytes");
+            DirectCoverage.State reported = attemptedSource == null || state == DirectCoverage.State.PENDING
+                    ? state : DirectCoverage.State.UNAVAILABLE;
+            return new Outcome(reported, null, "no_bytes");
         }
         ImportRequest request = ImportRequest.captured(packageName, accountKey, threadKey, identity.messageKey,
                 identity.fromMe, identity.timestamp, identity.viewOnce);
@@ -82,6 +83,8 @@ public final class DirectCapture {
         }
         DirectCoverage.State recorded = coverage.settleTransfer(packageName, accountKey, threadKey, identity, outcome,
                 item == null ? null : item.uuid, error, attemptedSource, sourceVersion);
-        return new Outcome(recorded == DirectCoverage.State.PENDING ? recorded : outcome, item, error);
+        DirectCoverage.State reported = attemptedSource == null || recorded == DirectCoverage.State.PENDING
+                ? recorded : outcome;
+        return new Outcome(reported, item, error);
     }
 }

@@ -17,7 +17,7 @@ Decisões do responsável, vinculantes, mais recentes primeiro:
 1. **2026-11-27.** Nenhuma operação automática pode consumir uma visualização única ou alterar de forma irreversível o estado de uma mensagem no servidor. A consolidação histórica de arquivos elegíveis fica separada da abertura de mensagens efêmeras. A validação inicial usa somente mídias de teste próprias ou autorizadas, sem operações em massa sobre conversas reais. Biblioteca, associação individual e integração visual são validadas de forma independente. A disponibilidade nativa é preservada e a apresentação inline futura não é garantia contra perda. Substitui a aceitação de prefetch dada na mesma sessão.
 2. **2026-11-26.** Integração visual híbrida: investigar Compose atrás de uma flag própria; apresentação nativa e galeria própria como fallback permanente.
 
-Com **Atalho da biblioteca no Direct** e **Guardar mídias do Direct a partir do cache local do Instagram** ligados (a segunda vem desligada), o menu da conversa ganha **Guardar mídias desta conversa** e **Guardar mídias de todas as conversas em cache**. Nada roda sem esse toque e a confirmação.
+Com **Atalho da biblioteca no Direct** e **Guardar mídias do Direct a partir do cache local do Instagram** ligados (a segunda vem desligada), o menu da conversa ganha **Guardar mídias desta conversa** e **Guardar mídias de todas as conversas em cache**. Essas ações manuais exigem toque e confirmação. Com as duas opções ativas, a captura passiva também pode observar páginas e itens já recebidos pelo Instagram.
 
 O fluxo tem quatro etapas registradas separadamente:
 
@@ -26,7 +26,7 @@ O fluxo tem quatro etapas registradas separadamente:
 3. **Importação.** O módulo baixa a URL de CDN do modelo e passa os bytes pelo importador existente: hash, validação estrutural, decodificação, deduplicação e commit. Visualização única e mídias com repetição nunca têm URL enviada nem baixada e ficam `unavailable` com `view_once_not_fetched`.
 4. **Relatório.** **Gerenciar → Cobertura do Direct** mostra conversas, completas, descobertos, guardados, indisponíveis, visualização única, recusados, ambíguos e pendentes. O botão continua ou pausa as cópias.
 
-O checkpoint é o estado de cada identidade. Pausa, morte do processo e reinício retomam do primeiro item não final. A primeira falha transitória interrompe a rodada para tentar de novo depois. Uma URL expirada fica `unavailable` até uma nova leitura oferecer outra. Ao reiniciar, o módulo retoma apenas cópias já iniciadas pelo usuário.
+O checkpoint é o estado de cada identidade. Pausa, morte do processo e reinício retomam do primeiro item não final. Uma falha transitória consome uma tentativa do item. A rodada continua com os outros itens disponíveis, e lotes posteriores priorizam trabalho novo. Uma URL expirada fica `unavailable` até uma nova leitura oferecer outra. Ao reiniciar, o módulo retoma apenas cópias já iniciadas pelo usuário.
 
 Limites: o cache do Instagram é parcial e despejável. Mensagens que o aparelho nunca carregou não estão nele. Uma conversa só aparece como completa quando o início foi alcançado e nada está pendente. A leitura do cache não registra o início da conversa, então **nenhuma conversa consolidada por esse caminho aparece como completa**. O relatório distingue histórico processado de histórico disponível. O download da CDN é uma requisição de rede adicional, sem cookies e sem hosts da API.
 
@@ -45,9 +45,11 @@ APK inspecionado **454.0.0.0.55 / 386005100**, SHA-256 `3419bb746e9f78cfdcca3794
 
 A associação é explícita e só acontece após validação da seleção nativa e escolha da cópia pelo usuário. Confirmações tardias são descartadas se o contexto mudou. Duas cópias divergentes com a mesma identidade continuam na galeria da conversa e a tela filtrada da mensagem deixa de escolher uma miniatura. O catálogo, os recibos e as notificações do Instagram ficam fora do fluxo. Uma página nova ou a ausência de uma mensagem não altera o catálogo local.
 
-A miniatura específica da mensagem aparece na galeria do módulo. Falta confirmar o componente que recebe a identidade durante o bind de cada balão nas rotas Android Views e Compose. A renderização nos balões permanece nativa. O atalho de mídias compartilhadas mantém a galeria própria como fallback e não substitui o adaptador do Instagram.
+A miniatura específica da mensagem aparece na galeria do módulo. O bind convencional em Android Views do 454 pode apresentar uma miniatura de uma cópia local exata, própria ou vinculada explicitamente. A confirmação no aparelho está pendente. Na ausência de correspondência inequívoca ou de suporte à rota nativa, a renderização permanece nativa. O atalho de mídias compartilhadas mantém a galeria própria como fallback e não substitui o adaptador do Instagram.
 
 ## Validação
+
+A [coleta única no Galaxy](MEDIA_LIBRARY_GALAXY_DIAGNOSTICS.md) distingue descoberta, oferta, transferência, validação, persistência e apresentação.
 
 Os testes de SQLite exercitam páginas simuladas em ambas as direções, repetição de página, IDs reconstruídos, troca de escopo, colisão e leitura de uma cópia ausente da página mais recente. O teste Android reconstitui o importador e o SQLite após uma pausa e verifica o checkpoint, o relatório e a retomada na fonte seguinte com arquivos sintéticos. Os testes de recibos e notificações da suíte existente tratam a política local, sem afirmar o comportamento do servidor.
 

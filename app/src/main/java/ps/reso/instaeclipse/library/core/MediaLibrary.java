@@ -250,12 +250,15 @@ public final class MediaLibrary {
         return rows.size() == 1 ? new LibraryItem(rows.get(0)) : null;
     }
 
-    /** Inline access is limited to an exact, owned or explicitly linked conventional copy. */
+    /**
+     * The one available copy kept for exactly this message (account, thread, message id,
+     * direction), whatever its origin or mode: captured view-once and replayable copies included
+     * (owner decision 2026-11-27, final goal). Two different copies for the identity give none.
+     */
     public LibraryItem inlineCopy(ImportRequest scope) {
         LibraryItem copy = lookup(scope.packageName, scope.accountKey, scope.threadKey,
                 scope.messageKey, scope.fromMe);
-        if (copy == null || !copy.isAvailable() || copy.viewOnce
-                || (!scope.fromMe && !"normal".equals(copy.origin))) return null;
+        if (copy == null || !copy.isAvailable()) return null;
         return copy;
     }
 

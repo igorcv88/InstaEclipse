@@ -41,12 +41,111 @@ final class DirectInlinePreview {
         ImageView overlay;
         int generation;
         View.OnAttachStateChangeListener attachment;
+        /** Visual (view-once/replay) bubble: native children hidden while the copy is shown. */
+        View[] hidden;
+        int[] hiddenVisibility;
+        boolean visual;
     }
 
     private DirectInlinePreview() {}
 
     static void install(ClassLoader loader) throws ReflectiveOperationException {
-        new DirectInlinePreview().hook(loader);
+        DirectInlinePreview preview = new DirectInlinePreview();
+        preview.hook(loader);
+        try {
+            preview.hookVisual(loader);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+            DirectTrace.summary("inline_visual_install", "result=" + mismatch.getClass().getSimpleName());
+            ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) visual inline unavailable: " + mismatch);
+        }
+    }
+
+    /**
+     * 454 visual row (view-once, replay, keep in chat): X.02vL binds holder X.0AHX (A04 bubble
+     * frame, A05 icon, A06 label, A08 progress) to model X.0E34, whose identity lives in X.03QJ
+     * like the conventional row's. With a kept copy for exactly this message, the bubble shows
+     * the copy as a photo and opens it from the library; otherwise it stays native.
+     */
+    private void hookVisual(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> definition = DirectLibraryHook.hostClass(loader, "X.02vL");
+        Class<?> holder = DirectLibraryHook.hostClass(loader, "X.0AHX");
+        Class<?> model = DirectLibraryHook.hostClass(loader, "X.0E34");
+        Class<?> sessionType = DirectLibraryHook.hostClass(loader, "com.instagram.common.session.UserSession");
+        Class<?> identifierType = DirectLibraryHook.hostClass(loader, "com.instagram.model.direct.messageid.MessageIdentifier");
+        Class<?> hostHolder = DirectLibraryHook.hostClass(loader, "X.0YmP");
+        Class<?> hostModel = DirectLibraryHook.hostClass(loader, "X.0mbl");
+        Method bind = definition.getDeclaredMethod("AWs", hostHolder, hostModel);
+        Method unbind = definition.getDeclaredMethod("Hjg", hostHolder);
+        Method parentId = model.getMethod("CpM");
+        Method kind = model.getMethod("BrO");
+        Field frame = field(holder, "A04");
+        Field icon = field(holder, "A05");
+        Field label = field(holder, "A06");
+        Field progress = field(holder, "A08");
+        Field session = field(definition, "A01");
+        Field accountId = field(sessionType, "userId");
+        Field props = field(model, "A0D");
+        Field threadId = field(props.getType(), "A05");
+        Field direction = field(props.getType(), "A09");
+        Field serverId = field(identifierType, "A01");
+        Field clientContext = field(identifierType, "A00");
+
+        XposedBridge.hookMethod(unbind, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam call) throws IllegalAccessException {
+                if (mainThread() && holder.isInstance(call.args[0])
+                        && frame.get(call.args[0]) instanceof FrameLayout container) clear(container);
+            }
+        });
+        XposedBridge.hookMethod(bind, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam call) throws IllegalAccessException {
+                if (mainThread() && holder.isInstance(call.args[0])
+                        && frame.get(call.args[0]) instanceof FrameLayout container) clear(container);
+            }
+
+            @Override protected void afterHookedMethod(MethodHookParam call) {
+                if (call.hasThrowable() || !mainThread() || !FeatureFlags.directMediaLibrary
+                        || !holder.isInstance(call.args[0]) || !model.isInstance(call.args[1])) return;
+                try {
+                    Object row = call.args[1];
+                    Object type = kind.invoke(row);
+                    String name = type instanceof Enum<?> e ? e.name() : null;
+                    if (!"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
+                    if (!(frame.get(call.args[0]) instanceof FrameLayout container)) return;
+                    Object identifier = parentId.invoke(row);
+                    if (!identifierType.isInstance(identifier)) return;
+                    String key = (String) serverId.get(identifier);
+                    String local = (String) clientContext.get(identifier);
+                    if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)) return;
+                    Object nativeSession = session.get(call.thisObject);
+                    Object rowProps = props.get(row);
+                    if (nativeSession == null || rowProps == null) return;
+                    String account = (String) accountId.get(nativeSession);
+                    String thread = (String) threadId.get(rowProps);
+                    Activity activity = activity(container.getContext());
+                    if (activity == null) return;
+                    CurrentConversation.Snapshot foreground = CurrentConversation.resolve(activity);
+                    if (foreground == null || !foreground.accountId.equals(account)
+                            || !foreground.threadId.equals(thread)) {
+                        DirectTrace.event(account, thread, key, "inline_visual", "result=scope_unavailable");
+                        return;
+                    }
+                    ImportRequest selection = ImportRequest.forMessage(DirectStoreScanner.HOST,
+                            account, thread, key, direction.getBoolean(rowProps));
+                    Binding binding = request(container, activity, foreground, selection);
+                    binding.visual = true;
+                    Object[] natives = { icon.get(call.args[0]), label.get(call.args[0]), progress.get(call.args[0]) };
+                    int count = 0;
+                    for (Object view : natives) if (view instanceof View) count++;
+                    binding.hidden = new View[count];
+                    binding.hiddenVisibility = new int[count];
+                    int index = 0;
+                    for (Object view : natives) if (view instanceof View v) binding.hidden[index++] = v;
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                    DirectTrace.summary("inline_visual", "result=" + failure.getClass().getSimpleName());
+                }
+            }
+        });
+        ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) 454 visual inline installed");
     }
 
     private void hook(ClassLoader loader) throws ReflectiveOperationException {
@@ -129,8 +228,8 @@ final class DirectInlinePreview {
         });
     }
 
-    private void request(FrameLayout frame, Activity activity, CurrentConversation.Snapshot foreground,
-                         ImportRequest selection) {
+    private Binding request(FrameLayout frame, Activity activity, CurrentConversation.Snapshot foreground,
+                            ImportRequest selection) {
         Binding binding = new Binding();
         binding.attachment = new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View view) {
@@ -145,7 +244,11 @@ final class DirectInlinePreview {
         };
         bindings.put(frame, new WeakReference<>(binding));
         frame.addOnAttachStateChangeListener(binding.attachment);
-        if (frame.isAttachedToWindow()) load(frame, activity, foreground, selection, binding);
+        // Loaded after the caller finished configuring the binding (visual rows set it up first).
+        frame.post(() -> {
+            if (current(frame) == binding && frame.isAttachedToWindow()) load(frame, activity, foreground, selection, binding);
+        });
+        return binding;
     }
 
     private void load(FrameLayout frame, Activity activity, CurrentConversation.Snapshot foreground,
@@ -180,11 +283,36 @@ final class DirectInlinePreview {
                         overlay.setOnClickListener(view -> DirectGalleryLauncher.open(activity, selection,
                                 () -> current(frame) == binding && FeatureFlags.directMediaLibrary
                                         && CurrentConversation.revalidate(activity, foreground)));
-                        frame.addView(overlay, new FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                        FrameLayout.LayoutParams params;
+                        if (binding.visual) {
+                            // The ephemeral pill becomes a photo bubble: 240dp wide, aspect kept
+                            // between 140dp and 340dp tall.
+                            float dp = frame.getResources().getDisplayMetrics().density;
+                            int width = Math.round(240 * dp);
+                            int height = Math.round(width * (float) thumbnail.getHeight() / Math.max(1, thumbnail.getWidth()));
+                            height = Math.max(Math.round(140 * dp), Math.min(Math.round(340 * dp), height));
+                            params = new FrameLayout.LayoutParams(width, height);
+                            if (binding.hidden != null) {
+                                for (int i = 0; i < binding.hidden.length; i++) {
+                                    binding.hiddenVisibility[i] = binding.hidden[i].getVisibility();
+                                    binding.hidden[i].setVisibility(View.GONE);
+                                }
+                            }
+                            overlay.setClipToOutline(true);
+                            overlay.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                                @Override public void getOutline(View view, android.graphics.Outline outline) {
+                                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), 18 * dp);
+                                }
+                            });
+                        } else {
+                            params = new FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                        }
+                        frame.addView(overlay, params);
                         binding.overlay = overlay;
                         DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey,
-                                "inline_bind", "result=applied from_me=" + selection.fromMe);
+                                binding.visual ? "inline_visual" : "inline_bind",
+                                "result=applied from_me=" + selection.fromMe);
                     });
                 } catch (RuntimeException failure) {
                     DirectTrace.summary("inline_preview", "result=" + failure.getClass().getSimpleName());
@@ -205,6 +333,14 @@ final class DirectInlinePreview {
 
     private static void removeOverlay(FrameLayout frame, Binding binding) {
         if (binding.overlay == null) return;
+        // Compare-and-restore: only views this binding hid, and only if still hidden by it.
+        if (binding.hidden != null) {
+            for (int i = 0; i < binding.hidden.length; i++) {
+                if (binding.hidden[i].getVisibility() == View.GONE) {
+                    binding.hidden[i].setVisibility(binding.hiddenVisibility[i]);
+                }
+            }
+        }
         frame.removeView(binding.overlay);
         binding.overlay.setImageDrawable(null);
         binding.overlay = null;

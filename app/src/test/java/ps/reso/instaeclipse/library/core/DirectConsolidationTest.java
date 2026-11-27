@@ -592,13 +592,19 @@ public final class DirectConsolidationTest {
         }
     }
 
-    @Test public void inlineRequiresAnExactOwnedOrExplicitlyLinkedCopy() throws Exception {
+    @Test public void inlineShowsTheExactCopyOfAMessageWhateverItsOriginOrMode() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             MediaLibrary library = fixture.open();
             ImportRequest received = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63103", false);
             library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63103", false, 1, false),
                     () -> new ByteArrayInputStream(jpeg(105)));
-            assertNull(library.inlineCopy(received));
+            assertNotNull("a captured received copy is shown", library.inlineCopy(received));
+            ImportRequest viewOnce = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63106", false);
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63106", false, 1, true),
+                    () -> new ByteArrayInputStream(jpeg(109)));
+            LibraryItem permanent = library.inlineCopy(viewOnce);
+            assertNotNull("a captured view-once copy replaces the ephemeral bubble", permanent);
+            assertTrue(permanent.viewOnce);
             library.importMedia(received, () -> new ByteArrayInputStream(jpeg(105)));
             assertNotNull(library.inlineCopy(received));
             library.importMedia(received, () -> new ByteArrayInputStream(jpeg(106)));

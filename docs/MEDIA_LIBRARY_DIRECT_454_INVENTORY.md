@@ -103,3 +103,14 @@ Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o m
 - Em `classes12.dex`, `X.0CHD` lê `items`, `has_older` e `oldest_cursor`. `X.0ANV.A02` mapeia os valores para `X.0R7T.A00`, `A08` e `A05`. `X.0AYL.A0x()` expõe a resposta nativa e `Dpk()` expõe a conversa da requisição; a conta vem da sessão do mesmo objeto de requisição.
 - A captura observa essa resposta e oferece as mídias da página inteira, inclusive as que ainda não foram montadas em uma linha. Os logs contêm contagens e presença de cursor. Essa rota precisa ser confirmada no Galaxy. Ela é passiva e nenhuma observação marca uma conversa como consolidada.
 - O histórico remoto completo ainda depende de validar a enumeração paginada da inbox e um caminho de leitura por conversa que funcione sem navegar para ela ou enviar recibos. `direct.db` continua sendo uma fonte parcial.
+
+## Balão visual (visualização única, repetição, manter na conversa)
+
+| Fato | Classe | Confiança |
+|---|---|---|
+| `X.02vL` infla `layout/direct_visual_message` (0x7f0e0506) em `B6O`, faz bind em `AWs(X.0AHX, X.0E34)` e unbind em `Hjg(X.0AHX)` | `X.02vL` | A |
+| Holder `X.0AHX`: `A04` = `FrameLayout` do balão, `A05` = ícone, `A06` = rótulo, `A08` = overlay de progresso | `X.02vL.B6O` | A |
+| Modelo `X.0E34 extends X.0B79`; identidade em `X.03QJ` (`A0D`), igual à linha convencional: `CpM()` = identificador, `A05` = thread, `A09` = direção. Sessão em `X.02vL.A01` | `X.0E34`, `X.02vL` | A |
+
+Evidência física (Galaxy, `IEDirectTrace`, 27/11 16:14): 27 partes efêmeras com `source_gap=no_versions` (o Instagram remove as versões depois da visualização), 4 delas já guardadas; 11 consultas `inline_lookup result=no_eligible_copy`, 2 delas para mensagens com cópia guardada. `DirectInlinePreview` passa a desenhar a cópia guardada no balão visual e `MediaLibrary.inlineCopy` aceita cópias capturadas e de visualização única.
+

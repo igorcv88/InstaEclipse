@@ -42,6 +42,16 @@ public class DirectLiveOfferQueueTest {
         assertEquals(3, queue.snapshot().size());
     }
 
+    @Test public void aPagePlaceholderDoesNotReplaceAQueuedSource() {
+        DirectLiveOfferQueue queue = new DirectLiveOfferQueue();
+        DirectStoreRow available = row("100", "200", "ready");
+        DirectStoreRow placeholder = DirectStoreRow.parse("100", "200", "42", "media", 1000,
+                "{\"item_id\":\"42\",\"item_type\":\"media\",\"user_id\":\"100\"}");
+        assertEquals(DirectLiveOfferQueue.Add.QUEUED, queue.add(available));
+        assertEquals(DirectLiveOfferQueue.Add.DUPLICATE, queue.add(placeholder));
+        assertSame(available, queue.snapshot().get(0).row);
+    }
+
     @Test public void exhaustedRowsCanBeRetriedByAFutureBind() {
         DirectLiveOfferQueue queue = new DirectLiveOfferQueue();
         DirectStoreRow row = row("100", "200", "unavailable");

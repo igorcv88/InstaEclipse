@@ -83,7 +83,7 @@ O ID usado pelo `CurrentConversation` (`thread:`), o `thread_id` de `direct.db` 
 
 `GhostPermanentViewHook` (opção `permanentViewMode`) reescreve `view_mode` de `once`/`replayable` para `permanent` no objeto `X.02jG` devolvido pelo parser, antes de o Instagram gravar `direct.db` e antes da captura serializar o modelo. Com a opção ligada, `permanent` deixa de provar que a mídia é permanente. As 4 linhas do teste físico podem ter sido visualização única reescrita.
 
-Correção: o hook passa a registrar o modo original por objeto (`ORIGINAL_BY_OBJECT`, chaves fracas) e a captura ao vivo classifica pelo modo original. Com a opção ligada, o Instagram já exibe essas mídias como permanentes e abri-las não consome a visualização, então a captura é permitida e o item entra na biblioteca marcado como visualização única. Sem a opção, vale a regra de própria ou já aberta.
+Correção: o hook passa a registrar o modo original por objeto (`ORIGINAL_BY_OBJECT`, chaves fracas) e a captura ao vivo classifica pelo modo original. A biblioteca usa o modo original para decidir a elegibilidade. A reescrita em memória não autoriza a cópia de uma mídia recebida ainda não aberta. Vale a regra de própria ou já aberta pela conta.
 
 Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o modo original. A varredura do cache continua classificando essas linhas como permanentes.
 
@@ -95,3 +95,11 @@ Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o m
 4. Verificação de que a ação Salvar e a linha de `direct.db` da mesma mensagem dão o mesmo ID.
 5. Rede: com proxy ou `logcat`, confirmar que a consolidação só faz requisições a hosts de CDN e nenhuma a `i.instagram.com`.
 6. Visualização única de teste: confirmar que o remetente continua vendo a mídia como não aberta depois de uma consolidação da conversa.
+
+## Transporte e paginação no PR #9
+
+- O log do aparelho mostrou linhas antigas entrando na fila e lotes inteiros saindo com `(no context)`. O hook é instalado durante ou a partir de `Application.attach`. Caso o contexto da aplicação ainda não esteja publicado, o flush usa o contexto base do host. A fila só confirma as linhas depois do aceite do provider e tenta de novo em falhas transitórias.
+- Para linhas ainda sem chave própria, `X.01Fo.A0K` aponta para `X.019w`. O `toString()` de `X.019w` usa `A0V` como `threadId`. A captura usa essa identidade no lugar da conversa em primeiro plano. Se as duas identidades explícitas divergirem, a linha é recusada.
+- Em `classes12.dex`, `X.0CHD` lê `items`, `has_older` e `oldest_cursor`. `X.0ANV.A02` mapeia os valores para `X.0R7T.A00`, `A08` e `A05`. `X.0AYL.A0x()` expõe a resposta nativa e `Dpk()` expõe a conversa da requisição; a conta vem da sessão do mesmo objeto de requisição.
+- A captura observa essa resposta e oferece as mídias da página inteira, inclusive as que ainda não foram montadas em uma linha. Os logs contêm contagens e presença de cursor. Essa rota precisa ser confirmada no Galaxy. Ela é passiva e nenhuma observação marca uma conversa como consolidada.
+- O histórico remoto completo ainda depende de validar a enumeração paginada da inbox e um caminho de leitura por conversa que funcione sem navegar para ela ou enviar recibos. `direct.db` continua sendo uma fonte parcial.

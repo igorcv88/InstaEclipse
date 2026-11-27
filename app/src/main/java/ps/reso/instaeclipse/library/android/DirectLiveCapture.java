@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import ps.reso.instaeclipse.library.core.DirectConsolidation;
 import ps.reso.instaeclipse.library.core.DirectLiveOfferQueue;
@@ -24,9 +25,8 @@ import ps.reso.instaeclipse.xposedcompat.XC_MethodHook;
 import ps.reso.instaeclipse.xposedcompat.XposedBridge;
 
 /**
- * Runs in the Instagram process. Every time Instagram 454 builds a Direct row for a message
- * ({@code X.0BMD} static builders, see docs/MEDIA_LIBRARY_DIRECT_454_INVENTORY.md), the message
- * model is serialized with Instagram's own serializer ({@code X.01hN}, the same JSON that
+ * Runs in the Instagram process. When Instagram 454 builds a Direct row or delivers a native
+ * thread page (see docs/MEDIA_LIBRARY_DIRECT_454_INVENTORY.md), each eligible message model is serialized with Instagram's own serializer ({@code X.01hN}, the same JSON that
  * {@code direct.db} stores) and parsed by {@link DirectStoreRow}. Media parts are offered to the
  * module, which keeps them keyed by the message's own ids.
  *
@@ -46,7 +46,7 @@ public final class DirectLiveCapture {
     private static final long FLUSH_DELAY_MS = 1_500L;
 
     private static Context hostContext;
-    private static Field rowModel, messageType, threadKey, threadId, sessionUser, visualModel;
+    private static Field rowModel, rowMetadata, metadataThread, messageType, threadKey, threadId, sessionUser, visualModel;
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
     private static Class<?> sessionClass, messageContextClass;
@@ -59,7 +59,7 @@ public final class DirectLiveCapture {
     private static final Map<String, Integer> discards = new LinkedHashMap<>();
     /** Rows seen per message type; the first two of each type are logged. */
     private static final Map<String, Integer> typesSeen = new LinkedHashMap<>();
-    private static final Handler main = new Handler(android.os.Looper.getMainLooper());
+    private static final AtomicInteger pendingPages = new AtomicInteger();
 
     private static void discard(String reason) {
         int count;
@@ -81,6 +81,8 @@ public final class DirectLiveCapture {
             Class<?> base = Class.forName(MODEL_BASE, false, loader);
             Class<?> session = Class.forName(SESSION, false, loader);
             rowModel = field(contextArg, "A0y", MODEL);
+            rowMetadata = field(contextArg, "A0K", "X.019w");
+            metadataThread = field(rowMetadata.getType(), "A0V", String.class.getName());
             messageType = field(base, "A0V", "X.01iJ");
             threadKey = field(base, "A0T", "com.instagram.model.direct.DirectThreadKey");
             threadId = field(threadKey.getType(), "A00", String.class.getName());
@@ -149,6 +151,11 @@ public final class DirectLiveCapture {
             }
             if (hooked == 0) throw new NoSuchMethodException("Row builders");
             ModuleLog.line("(IE|MediaLibrary) 454 live capture installed on " + hooked + " row builders");
+            try {
+                installNativePageCapture(loader);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+                discard("page_hook_" + mismatch.getClass().getSimpleName());
+            }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             ModuleLog.line("(IE|MediaLibrary) live capture unavailable: " + mismatch);
         }
@@ -175,56 +182,139 @@ public final class DirectLiveCapture {
     };
 
     private static void handle(java.lang.reflect.Member method, Object[] args) {
-            if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
-            try {
-                Object session = null, context = null;
-                for (Object arg : args) {
-                    if (sessionClass.isInstance(arg)) session = arg;
-                    else if (messageContextClass.isInstance(arg)) context = arg;
-                }
-                if (session == null || context == null) { discard("no_session_or_context"); return; }
-                Object model = rowModel.get(context);
-                if (model == null) { discard("no_model"); return; }
-                Object type = messageType.get(model);
-                String name = type instanceof Enum<?> e ? e.name() : String.valueOf(type);
-                int seenOfType;
-                synchronized (typesSeen) {
-                    seenOfType = typesSeen.merge(name, 1, Integer::sum);
-                }
-                if (seenOfType <= 2) {
-                    ModuleLog.line("(IE|MediaLibrary) live capture saw a row type=" + name
-                            + " via=" + method.getDeclaringClass().getName() + "." + method.getName());
-                }
-                if (!"MEDIA".equals(name) && !"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
-                String id = (String) serverId.invoke(model);
-                Object key = threadKey.get(model);
-                String thread = key == null ? null : (String) threadId.get(key);
-                String account = (String) sessionUser.get(session);
-                if (!ImportRequest.validKey(id)) { discard("no_server_id type=" + name); return; }
-                if (!ImportRequest.validKey(account)) { discard("no_account"); return; }
-                if (!ImportRequest.validKey(thread)) {
-                    // Messages loaded from the server may carry no thread key on the model; use the
-                    // conversation open on screen, resolved and validated on the main thread.
-                    Object pendingModel = model;
-                    main.post(() -> fromForeground(pendingModel, id, account, name));
-                    return;
-                }
-                capture(model, id, account, thread, name);
-            } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
-                ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
-            }
-    }
-
-    private static void fromForeground(Object model, String id, String account, String type) {
+        if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
         try {
-            android.app.Activity activity = ps.reso.instaeclipse.utils.ghost.CurrentConversation.foregroundActivity();
-            ps.reso.instaeclipse.utils.ghost.CurrentConversation.Snapshot snapshot = activity == null ? null
-                    : ps.reso.instaeclipse.utils.ghost.CurrentConversation.resolve(activity);
-            if (snapshot == null) { discard("no_thread_and_no_foreground_conversation type=" + type); return; }
-            if (!account.equals(snapshot.accountId)) { discard("foreground_account_differs"); return; }
-            capture(model, id, account, snapshot.threadId, type);
+            Object session = null, context = null;
+            for (Object arg : args) {
+                if (sessionClass.isInstance(arg)) session = arg;
+                else if (messageContextClass.isInstance(arg)) context = arg;
+            }
+            if (session == null || context == null) { discard("no_session_or_context"); return; }
+            Object model = rowModel.get(context);
+            if (model == null) { discard("no_model"); return; }
+            String name = modelType(model);
+            int seenOfType;
+            synchronized (typesSeen) {
+                seenOfType = typesSeen.merge(name, 1, Integer::sum);
+            }
+            if (seenOfType <= 2) {
+                ModuleLog.line("(IE|MediaLibrary) live capture saw a row type=" + name
+                        + " via=" + method.getDeclaringClass().getName() + "." + method.getName());
+            }
+            if (!isMediaType(name)) return;
+            Object metadata = rowMetadata.get(context);
+            String thread = metadata == null ? null : (String) metadataThread.get(metadata);
+            captureScoped(model, (String) sessionUser.get(session), thread, name);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
+        }
+    }
+
+    private static String modelType(Object model) throws IllegalAccessException {
+        Object type = messageType.get(model);
+        return type instanceof Enum<?> e ? e.name() : String.valueOf(type);
+    }
+
+    private static boolean isMediaType(String name) {
+        return "MEDIA".equals(name) || "EXPIRING_MEDIA".equals(name) || "VISUAL_MEDIA".equals(name);
+    }
+
+    private static boolean captureScoped(Object model, String account, String sourceThread, String type)
+            throws ReflectiveOperationException {
+        String id = (String) serverId.invoke(model);
+        Object key = threadKey.get(model);
+        String modelThread = key == null ? null : (String) threadId.get(key);
+        if (ImportRequest.validKey(modelThread) && ImportRequest.validKey(sourceThread)
+                && !modelThread.equals(sourceThread)) {
+            discard("model_thread_differs_from_source");
+            return false;
+        }
+        String thread = ImportRequest.validKey(modelThread) ? modelThread : sourceThread;
+        if (!ImportRequest.validKey(id) || !ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) {
+            discard("no_message_identity type=" + type);
+            return false;
+        }
+        capture(model, id, account, thread, type);
+        return true;
+    }
+
+    /** Observes Instagram's own thread response before any row must be built. */
+    private static void installNativePageCapture(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> fetch = Class.forName("X.0AYL", false, loader);
+        Class<?> response = Class.forName("X.0Ir8", false, loader);
+        Method responseMethod = fetch.getDeclaredMethod("A0x");
+        Method requestThread = fetch.getDeclaredMethod("Dpk");
+        if (responseMethod.getReturnType() != response || requestThread.getReturnType() != String.class) {
+            throw new NoSuchMethodException("Thread page");
+        }
+        Field requestSession = field(fetch.getSuperclass(), "A04", SESSION);
+        Field responseError = field(response, "A04", "com.instagram.realtimeclient.DirectApiError");
+        Field responsePage = field(response, "A02", "X.0R7T");
+        Field pageItems = field(responsePage.getType(), "A00", List.class.getName());
+        Field moreBefore = field(responsePage.getType(), "A08", "boolean");
+        Field oldestCursor = field(responsePage.getType(), "A05", String.class.getName());
+        XposedBridge.hookMethod(responseMethod, new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                JitGuard.tick(param.method);
+                if (param.hasThrowable() || !FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
+                try {
+                    Object result = param.getResult();
+                    if (result == null || responseError.get(result) != null) return;
+                    String thread = (String) requestThread.invoke(param.thisObject);
+                    Object session = requestSession.get(param.thisObject);
+                    String account = session == null ? null : (String) sessionUser.get(session);
+                    Object page = responsePage.get(result);
+                    if (page == null || !ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) return;
+                    Object rawItems = pageItems.get(page);
+                    if (!(rawItems instanceof List<?> items)) return;
+
+                    // The hook is passive. The host owns scheduling of inbox and thread requests.
+                    // Keep a bounded number of already delivered pages on the capture worker.
+                    boolean hasOlder = moreBefore.getBoolean(page);
+                    String cursor = (String) oldestCursor.get(page);
+                    boolean hasCursor = cursor != null && !cursor.isEmpty();
+                    if (items.size() > 512) {
+                        discard("native_page_too_large");
+                        return;
+                    }
+                    if (pendingPages.incrementAndGet() > 8) {
+                        pendingPages.decrementAndGet();
+                        discard("page_queue_full");
+                        return;
+                    }
+                    boolean posted = false;
+                    try {
+                        List<?> snapshot = new ArrayList<>(items);
+                        posted = worker.post(() -> captureNativePage(snapshot, account, thread, hasOlder, hasCursor));
+                    } finally {
+                        if (!posted) pendingPages.decrementAndGet();
+                    }
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                    discard("page_observer_" + failure.getClass().getSimpleName());
+                }
+            }
+        });
+        ModuleLog.line("(IE|MediaLibrary) 454 native thread page observer installed");
+    }
+
+    private static void captureNativePage(List<?> items, String account, String thread, boolean hasOlder,
+                                          boolean hasCursor) {
+        int resolved = 0;
+        try {
+            if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
+            for (Object model : items) {
+                if (model == null || !rowModel.getType().isInstance(model)) continue;
+                try {
+                    String type = modelType(model);
+                    if (isMediaType(type) && captureScoped(model, account, thread, type)) resolved++;
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                    discard("page_item_" + failure.getClass().getSimpleName());
+                }
+            }
+            ModuleLog.line("(IE|MediaLibrary) native thread page items=" + items.size()
+                    + " media_resolved=" + resolved + " has_older=" + hasOlder + " has_cursor=" + hasCursor);
+        } finally {
+            pendingPages.decrementAndGet();
         }
     }
 
@@ -248,10 +338,13 @@ public final class DirectLiveCapture {
             if (added == DirectLiveOfferQueue.Add.FULL) discard("live_offer_queue_full");
             if (added != DirectLiveOfferQueue.Add.QUEUED) return;
             scheduleFlush();
-            int allowed = 0;
-            for (DirectStoreRow.Part part : row.parts) if (part.fetchAllowed) allowed++;
+            int allowed = 0, missingSource = 0;
+            for (DirectStoreRow.Part part : row.parts) {
+                if (part.fetchAllowed) allowed++;
+                if (part.best == null) missingSource++;
+            }
             ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
-                    + " fetchable=" + allowed + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
+                    + " fetchable=" + allowed + " missing_source=" + missingSource + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
                     + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId));
         } catch (org.json.JSONException failure) {
             discard("json " + failure.getClass().getSimpleName());

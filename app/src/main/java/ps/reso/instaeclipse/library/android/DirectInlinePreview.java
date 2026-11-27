@@ -84,11 +84,339 @@ final class DirectInlinePreview {
         hookEphemeralRow(loader, "X.0ThE", "X.0Ths", "A01", new String[] {"A00", "A02", "A03", "A04"}, false);
         ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) 454 visual inline installed");
         try {
+            hookCompose(loader);
+            ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) 454 compose inline installed");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+            DirectTrace.summary("inline_compose_install", "result=" + mismatch.getClass().getSimpleName());
+            ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) compose inline unavailable: " + mismatch);
+        }
+        try {
             traceBinders(loader, "X.0BID", "X.0Yza", "BrX");
             traceBinders(loader, "X.0BO7", "X.0Zb2", "DLm");
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             DirectTrace.summary("row_binder_install", "result=" + mismatch.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * 454 Compose message rows (the view-once pill "(1) Photo"): X.0BUa creates a MetaComposeView
+     * row held by X.0D7T, bound with the message context X.01Fo. A ComposeView takes no child
+     * views, so with a kept copy the row is drawn over through its ViewOverlay: the Compose content
+     * is made invisible, the row takes the photo's height and a tap opens the copy. Everything is
+     * restored on unbind and before every bind.
+     */
+    private void hookCompose(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> holder = DirectLibraryHook.hostClass(loader, "X.0D7T");
+        Class<?> wrapper = DirectLibraryHook.hostClass(loader, "X.01Fo");
+        Class<?> sessionType = DirectLibraryHook.hostClass(loader, "com.instagram.common.session.UserSession");
+        Class<?> model = DirectLibraryHook.hostClass(loader, "X.01hK");
+        Class<?> base = DirectLibraryHook.hostClass(loader, "X.0DKm");
+        Class<?> propsBuilder = DirectLibraryHook.hostClass(loader, "X.03QH");
+        Class<?> rowProps = DirectLibraryHook.hostClass(loader, "X.03QJ");
+        Class<?> identifierType = DirectLibraryHook.hostClass(loader, "com.instagram.model.direct.messageid.MessageIdentifier");
+        Field view = field(holder, "A02");
+        Field session = field(wrapper, "A0x");
+        Field message = field(wrapper, "A0y");
+        Field type = field(base, "A0V");
+        Field accountId = field(sessionType, "userId");
+        Field identifierField = null;
+        for (Field candidate : rowProps.getDeclaredFields()) {
+            if (candidate.getType() == identifierType && candidate.getName().equals("A04")) identifierField = candidate;
+        }
+        if (identifierField == null) throw new NoSuchFieldException("X.03QJ.A04");
+        identifierField.setAccessible(true);
+        Field identifier = identifierField;
+        Field threadId = field(rowProps, "A05");
+        Field direction = field(rowProps, "A09");
+        Field serverId = field(identifierType, "A01");
+        Field clientContext = field(identifierType, "A00");
+        Method mediaPart = model.getMethod("A0R");
+        Method props = null;
+        for (Method candidate : propsBuilder.getDeclaredMethods()) {
+            Class<?>[] types = candidate.getParameterTypes();
+            if (java.lang.reflect.Modifier.isStatic(candidate.getModifiers()) && candidate.getReturnType() == rowProps
+                    && types.length == 3 && types[0] == sessionType && types[1] == wrapper
+                    && types[2] == mediaPart.getReturnType()) props = candidate;
+        }
+        if (props == null) throw new NoSuchMethodException("X.03QH.A03");
+        Method rowPropsOf = props;
+        Method bind = null, unbind = null;
+        for (Method candidate : holder.getDeclaredMethods()) {
+            Class<?>[] types = candidate.getParameterTypes();
+            if (types.length == 1 && types[0] == wrapper && !candidate.isBridge()) bind = candidate;
+            if (types.length == 0 && candidate.getName().equals("A0H")) unbind = candidate;
+        }
+        if (bind == null || unbind == null) throw new NoSuchMethodException("X.0D7T bind/unbind");
+        try {
+            // The other Compose row holder (X.0Bqa / X.0D8e) binds another model; trace which one shows up.
+            Class<?> other = DirectLibraryHook.hostClass(loader, "X.0D8e");
+            for (Method candidate : other.getDeclaredMethods()) {
+                if (!candidate.getName().equals("A0I") || candidate.getParameterTypes().length != 1) continue;
+                XposedBridge.hookMethod(candidate, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam call) {
+                        Object arg = call.args[0];
+                        String combo = "X.0D8e.A0I arg=" + (arg == null ? "null" : arg.getClass().getName());
+                        if (DirectTrace.enabled() && BINDER_COMBOS.size() < 256 && BINDER_COMBOS.add(combo)) {
+                            DirectTrace.summary("row_binder", combo);
+                        }
+                    }
+                });
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError absent) {
+            DirectTrace.summary("row_binder_install", "compose_other=" + absent.getClass().getSimpleName());
+        }
+
+        XposedBridge.hookMethod(unbind, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam call) throws IllegalAccessException {
+                if (mainThread() && view.get(call.thisObject) instanceof ViewGroup row) clearCompose(row);
+            }
+        });
+        XposedBridge.hookMethod(bind, new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam call) throws IllegalAccessException {
+                if (mainThread() && view.get(call.thisObject) instanceof ViewGroup row) clearCompose(row);
+            }
+
+            @Override protected void afterHookedMethod(MethodHookParam call) {
+                if (call.hasThrowable() || !mainThread() || !FeatureFlags.directMediaLibrary) return;
+                try {
+                    if (!(view.get(call.thisObject) instanceof ViewGroup row)) return;
+                    Object context = call.args[0];
+                    Object rowModel = context == null ? null : message.get(context);
+                    if (!model.isInstance(rowModel)) return;
+                    Object kind = type.get(rowModel);
+                    String name = kind instanceof Enum<?> e ? e.name() : String.valueOf(kind);
+                    DirectTrace.summary("inline_compose", "result=bind kind=" + name);
+                    if (!"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
+                    Object nativeSession = session.get(context);
+                    Object part = mediaPart.invoke(rowModel);
+                    if (nativeSession == null || part == null) {
+                        DirectTrace.summary("inline_compose", "result=no_session_or_part");
+                        return;
+                    }
+                    Object built = rowPropsOf.invoke(null, nativeSession, context, part);
+                    Object id = built == null ? null : identifier.get(built);
+                    if (!identifierType.isInstance(id)) {
+                        DirectTrace.summary("inline_compose", "result=no_identifier");
+                        return;
+                    }
+                    String key = (String) serverId.get(id);
+                    String local = (String) clientContext.get(id);
+                    if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)) {
+                        DirectTrace.summary("inline_compose", "result=key_rejected");
+                        return;
+                    }
+                    String account = (String) accountId.get(nativeSession);
+                    String thread = (String) threadId.get(built);
+                    Activity activity = activity(row.getContext());
+                    if (activity == null) return;
+                    CurrentConversation.Snapshot foreground = CurrentConversation.resolve(activity);
+                    if (foreground == null || !foreground.accountId.equals(account)
+                            || !foreground.threadId.equals(thread)) {
+                        DirectTrace.event(account, thread, key, "inline_compose", "result=scope_unavailable");
+                        return;
+                    }
+                    DirectTrace.event(account, thread, key, "inline_compose", "result=lookup kind=" + name);
+                    requestCompose(row, activity, foreground, ImportRequest.forMessage(DirectStoreScanner.HOST,
+                            account, thread, key, direction.getBoolean(built)));
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                    DirectTrace.summary("inline_compose", "result=" + failure.getClass().getSimpleName());
+                }
+            }
+        });
+    }
+
+    private static final class ComposeBinding {
+        int generation;
+        boolean applied;
+        View content;
+        int contentVisibility;
+        int height;
+        android.graphics.drawable.Drawable photo;
+        View.OnAttachStateChangeListener attachment;
+    }
+
+    private final Map<ViewGroup, ComposeBinding> composeBindings = new WeakHashMap<>();
+
+    private void requestCompose(ViewGroup row, Activity activity, CurrentConversation.Snapshot foreground,
+                                ImportRequest selection) {
+        ComposeBinding binding = new ComposeBinding();
+        composeBindings.put(row, binding);
+        binding.attachment = new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View attached) {
+                if (composeBindings.get(row) == binding && !binding.applied) {
+                    loadCompose(row, activity, foreground, selection, binding);
+                }
+            }
+
+            @Override public void onViewDetachedFromWindow(View detached) {
+                if (composeBindings.get(row) != binding) return;
+                binding.generation++;
+                restoreCompose(row, binding);
+            }
+        };
+        row.addOnAttachStateChangeListener(binding.attachment);
+        row.post(() -> {
+            if (composeBindings.get(row) == binding && row.isAttachedToWindow()) {
+                loadCompose(row, activity, foreground, selection, binding);
+            }
+        });
+    }
+
+    private void loadCompose(ViewGroup row, Activity activity, CurrentConversation.Snapshot foreground,
+                             ImportRequest selection, ComposeBinding binding) {
+        int generation = ++binding.generation;
+        try {
+            READS.execute(() -> {
+                try {
+                    Bitmap thumbnail = thumbnail(activity, selection);
+                    if (thumbnail == null) {
+                        DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey,
+                                "inline_compose", "result=no_copy");
+                        return;
+                    }
+                    activity.runOnUiThread(() -> {
+                        if (composeBindings.get(row) != binding || binding.generation != generation
+                                || binding.applied || !row.isAttachedToWindow() || !FeatureFlags.directMediaLibrary
+                                || !CurrentConversation.revalidate(activity, foreground)) {
+                            thumbnail.recycle();
+                            return;
+                        }
+                        applyCompose(row, activity, foreground, selection, binding, thumbnail);
+                    });
+                } catch (RuntimeException failure) {
+                    DirectTrace.summary("inline_compose", "result=" + failure.getClass().getSimpleName());
+                }
+            });
+        } catch (RejectedExecutionException busy) {
+            DirectTrace.summary("inline_compose", "result=queue_full");
+        }
+    }
+
+    private static Bitmap thumbnail(Activity activity, ImportRequest selection) {
+        Bundle scope = new Bundle();
+        scope.putString(ConversationGalleryProvider.ACCOUNT, selection.accountKey);
+        scope.putString(ConversationGalleryProvider.THREAD, selection.threadKey);
+        scope.putString(ConversationGalleryProvider.MESSAGE, selection.messageKey);
+        scope.putBoolean(ConversationGalleryProvider.FROM_ME, selection.fromMe);
+        Bundle result = activity.getContentResolver().call(ConversationGalleryProvider.URI,
+                ConversationGalleryProvider.INLINE_METHOD, null, scope);
+        byte[] bytes = result == null ? null : result.getByteArray(ConversationGalleryProvider.INLINE_BYTES);
+        return bytes == null ? null : BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+    }
+
+    private void applyCompose(ViewGroup row, Activity activity, CurrentConversation.Snapshot foreground,
+                              ImportRequest selection, ComposeBinding binding, Bitmap thumbnail) {
+        float dp = row.getResources().getDisplayMetrics().density;
+        int width = Math.round(240 * dp);
+        int height = Math.round(width * (float) thumbnail.getHeight() / Math.max(1, thumbnail.getWidth()));
+        height = Math.max(Math.round(140 * dp), Math.min(Math.round(340 * dp), height));
+        int gap = Math.round(4 * dp);
+        int rowWidth = row.getWidth() > 0 ? row.getWidth() : row.getResources().getDisplayMetrics().widthPixels;
+        // Same edges as the native bubbles: 48dp after the sender avatar, 8dp from the right edge.
+        int left = selection.fromMe ? rowWidth - Math.round(8 * dp) - width : Math.round(48 * dp);
+        RoundedPhoto photo = new RoundedPhoto(thumbnail, 18 * dp);
+        photo.setBounds(left, gap, left + width, gap + height);
+
+        binding.content = row.getChildCount() > 0 ? row.getChildAt(0) : null;
+        if (binding.content != null) {
+            binding.contentVisibility = binding.content.getVisibility();
+            binding.content.setVisibility(View.INVISIBLE);
+        }
+        ViewGroup.LayoutParams params = row.getLayoutParams();
+        binding.height = params == null ? ViewGroup.LayoutParams.WRAP_CONTENT : params.height;
+        if (params != null) {
+            params.height = height + 2 * gap;
+            row.setLayoutParams(params);
+        }
+        row.getOverlay().add(photo);
+        binding.photo = photo;
+        binding.applied = true;
+        android.graphics.Rect bounds = photo.getBounds();
+        row.setOnTouchListener(new View.OnTouchListener() {
+            float downX, downY;
+            @Override public boolean onTouch(View touched, android.view.MotionEvent event) {
+                int x = Math.round(event.getX()), y = Math.round(event.getY());
+                switch (event.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        downX = event.getX();
+                        downY = event.getY();
+                        return bounds.contains(x, y);
+                    case android.view.MotionEvent.ACTION_UP:
+                        if (bounds.contains(x, y) && Math.abs(event.getX() - downX) < 24 * dp
+                                && Math.abs(event.getY() - downY) < 24 * dp) {
+                            DirectGalleryLauncher.open(activity, selection,
+                                    () -> composeBindings.get(row) == binding && FeatureFlags.directMediaLibrary
+                                            && CurrentConversation.revalidate(activity, foreground), true);
+                        }
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        });
+        DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey, "inline_compose",
+                "result=applied from_me=" + selection.fromMe);
+    }
+
+    private void clearCompose(ViewGroup row) {
+        ComposeBinding binding = composeBindings.remove(row);
+        if (binding == null) return;
+        binding.generation++;
+        row.removeOnAttachStateChangeListener(binding.attachment);
+        restoreCompose(row, binding);
+    }
+
+    private static void restoreCompose(ViewGroup row, ComposeBinding binding) {
+        if (!binding.applied) return;
+        binding.applied = false;
+        row.setOnTouchListener(null);
+        if (binding.photo != null) row.getOverlay().remove(binding.photo);
+        binding.photo = null;
+        // Compare-and-restore: only what this binding changed, and only if still as it left it.
+        if (binding.content != null && binding.content.getVisibility() == View.INVISIBLE) {
+            binding.content.setVisibility(binding.contentVisibility);
+        }
+        binding.content = null;
+        ViewGroup.LayoutParams params = row.getLayoutParams();
+        if (params != null) {
+            params.height = binding.height;
+            row.setLayoutParams(params);
+        }
+    }
+
+    /** A bitmap cropped to fill its bounds, with rounded corners. */
+    private static final class RoundedPhoto extends android.graphics.drawable.Drawable {
+        private final Bitmap bitmap;
+        private final float radius;
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG
+                | android.graphics.Paint.FILTER_BITMAP_FLAG);
+        private final android.graphics.RectF area = new android.graphics.RectF();
+
+        RoundedPhoto(Bitmap bitmap, float radius) {
+            this.bitmap = bitmap;
+            this.radius = radius;
+        }
+
+        @Override protected void onBoundsChange(android.graphics.Rect bounds) {
+            android.graphics.BitmapShader shader = new android.graphics.BitmapShader(bitmap,
+                    android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP);
+            float scale = Math.max(bounds.width() / (float) bitmap.getWidth(), bounds.height() / (float) bitmap.getHeight());
+            android.graphics.Matrix matrix = new android.graphics.Matrix();
+            matrix.setScale(scale, scale);
+            matrix.postTranslate(bounds.left + (bounds.width() - bitmap.getWidth() * scale) / 2f,
+                    bounds.top + (bounds.height() - bitmap.getHeight() * scale) / 2f);
+            shader.setLocalMatrix(matrix);
+            paint.setShader(shader);
+            area.set(bounds);
+        }
+
+        @Override public void draw(android.graphics.Canvas canvas) {
+            canvas.drawRoundRect(area, radius, radius, paint);
+        }
+
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
     /**

@@ -131,6 +131,16 @@ final class DirectInlinePreview {
         Field serverId = field(identifierType, "A01");
         Field clientContext = field(identifierType, "A00");
         Method mediaPart = model.getMethod("A0R");
+        Method serverIdOf = model.getMethod("A0o");
+        Method clientContextOf = model.getMethod("A0n");
+        if (serverIdOf.getReturnType() != String.class || clientContextOf.getReturnType() != String.class) {
+            throw new NoSuchMethodException("X.01hK ids");
+        }
+        Field modelThread = field(base, "A0T");
+        Field threadKeyId = field(modelThread.getType(), "A00");
+        Field contextMetadata = field(wrapper, "A0K");
+        Field metadataThread = field(contextMetadata.getType(), "A0T");
+        Field wrappedThreadId = field(metadataThread.getType(), "A00");
         Method props = null;
         for (Method candidate : propsBuilder.getDeclaredMethods()) {
             Class<?>[] types = candidate.getParameterTypes();
@@ -188,25 +198,37 @@ final class DirectInlinePreview {
                     DirectTrace.summary("inline_compose", "result=bind kind=" + name);
                     if (!"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
                     Object nativeSession = session.get(context);
-                    Object part = mediaPart.invoke(rowModel);
-                    if (nativeSession == null || part == null) {
-                        DirectTrace.summary("inline_compose", "result=no_session_or_part");
-                        return;
-                    }
-                    Object built = rowPropsOf.invoke(null, nativeSession, context, part);
-                    Object id = built == null ? null : identifier.get(built);
-                    if (!identifierType.isInstance(id)) {
-                        DirectTrace.summary("inline_compose", "result=no_identifier");
-                        return;
-                    }
-                    String key = (String) serverId.get(id);
-                    String local = (String) clientContext.get(id);
-                    if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)) {
-                        DirectTrace.summary("inline_compose", "result=key_rejected");
+                    if (nativeSession == null) {
+                        DirectTrace.summary("inline_compose", "result=no_session");
                         return;
                     }
                     String account = (String) accountId.get(nativeSession);
-                    String thread = (String) threadId.get(built);
+                    // The pill carries no media part (X.01lY), so the ids come from the model itself and
+                    // the thread from the message context; the direction only when a part exists.
+                    String key = (String) serverIdOf.invoke(rowModel);
+                    String local = (String) clientContextOf.invoke(rowModel);
+                    Object threadKey = modelThread.get(rowModel);
+                    String thread = threadKey == null ? null : (String) threadKeyId.get(threadKey);
+                    if (!ImportRequest.validKey(thread)) {
+                        Object metadata = contextMetadata.get(context);
+                        Object wrapped = metadata == null ? null : metadataThread.get(metadata);
+                        thread = wrapped == null ? null : (String) wrappedThreadId.get(wrapped);
+                    }
+                    Boolean fromMe = null;
+                    Object part = mediaPart.invoke(rowModel);
+                    if (part != null) {
+                        Object built = rowPropsOf.invoke(null, nativeSession, context, part);
+                        Object id = built == null ? null : identifier.get(built);
+                        if (identifierType.isInstance(id) && key != null && key.equals(serverId.get(id))
+                                && thread != null && thread.equals(threadId.get(built))) {
+                            fromMe = direction.getBoolean(built);
+                        }
+                    }
+                    if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)
+                            || !ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) {
+                        DirectTrace.summary("inline_compose", "result=key_rejected part=" + (part != null));
+                        return;
+                    }
                     Activity activity = activity(row.getContext());
                     if (activity == null) return;
                     CurrentConversation.Snapshot foreground = CurrentConversation.resolve(activity);
@@ -215,9 +237,10 @@ final class DirectInlinePreview {
                         DirectTrace.event(account, thread, key, "inline_compose", "result=scope_unavailable");
                         return;
                     }
-                    DirectTrace.event(account, thread, key, "inline_compose", "result=lookup kind=" + name);
+                    DirectTrace.event(account, thread, key, "inline_compose", "result=lookup kind=" + name
+                            + " direction_known=" + (fromMe != null));
                     requestCompose(row, activity, foreground, ImportRequest.forMessage(DirectStoreScanner.HOST,
-                            account, thread, key, direction.getBoolean(built)));
+                            account, thread, key, fromMe != null && fromMe), fromMe == null);
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     DirectTrace.summary("inline_compose", "result=" + failure.getClass().getSimpleName());
                 }
@@ -238,13 +261,13 @@ final class DirectInlinePreview {
     private final Map<ViewGroup, ComposeBinding> composeBindings = new WeakHashMap<>();
 
     private void requestCompose(ViewGroup row, Activity activity, CurrentConversation.Snapshot foreground,
-                                ImportRequest selection) {
+                                ImportRequest selection, boolean eitherDirection) {
         ComposeBinding binding = new ComposeBinding();
         composeBindings.put(row, binding);
         binding.attachment = new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View attached) {
                 if (composeBindings.get(row) == binding && !binding.applied) {
-                    loadCompose(row, activity, foreground, selection, binding);
+                    loadCompose(row, activity, foreground, selection, eitherDirection, binding);
                 }
             }
 
@@ -257,20 +280,29 @@ final class DirectInlinePreview {
         row.addOnAttachStateChangeListener(binding.attachment);
         row.post(() -> {
             if (composeBindings.get(row) == binding && row.isAttachedToWindow()) {
-                loadCompose(row, activity, foreground, selection, binding);
+                loadCompose(row, activity, foreground, selection, eitherDirection, binding);
             }
         });
     }
 
     private void loadCompose(ViewGroup row, Activity activity, CurrentConversation.Snapshot foreground,
-                             ImportRequest selection, ComposeBinding binding) {
+                             ImportRequest requested, boolean eitherDirection, ComposeBinding binding) {
         int generation = ++binding.generation;
         try {
             READS.execute(() -> {
                 try {
+                    ImportRequest selection = requested;
                     Bitmap thumbnail = thumbnail(activity, selection);
-                    if (thumbnail == null) {
-                        DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey,
+                    if (thumbnail == null && eitherDirection) {
+                        // A message id has one sender: at most one direction can hold its copy.
+                        selection = ImportRequest.forMessage(requested.packageName, requested.accountKey,
+                                requested.threadKey, requested.messageKey, !requested.fromMe);
+                        thumbnail = thumbnail(activity, selection);
+                    }
+                    ImportRequest chosen = selection;
+                    Bitmap found = thumbnail;
+                    if (found == null) {
+                        DirectTrace.event(requested.accountKey, requested.threadKey, requested.messageKey,
                                 "inline_compose", "result=no_copy");
                         return;
                     }
@@ -278,10 +310,10 @@ final class DirectInlinePreview {
                         if (composeBindings.get(row) != binding || binding.generation != generation
                                 || binding.applied || !row.isAttachedToWindow() || !FeatureFlags.directMediaLibrary
                                 || !CurrentConversation.revalidate(activity, foreground)) {
-                            thumbnail.recycle();
+                            found.recycle();
                             return;
                         }
-                        applyCompose(row, activity, foreground, selection, binding, thumbnail);
+                        applyCompose(row, activity, foreground, chosen, binding, found);
                     });
                 } catch (RuntimeException failure) {
                     DirectTrace.summary("inline_compose", "result=" + failure.getClass().getSimpleName());

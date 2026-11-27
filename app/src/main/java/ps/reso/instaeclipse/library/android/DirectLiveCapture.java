@@ -160,7 +160,7 @@ public final class DirectLiveCapture {
                 discard("page_hook_" + mismatch.getClass().getSimpleName());
             }
             try {
-                installRowBatchFallback(loader);
+                installRowBatchCapture(loader);
             } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
                 discard("row_batch_hook_" + mismatch.getClass().getSimpleName());
             }
@@ -298,7 +298,7 @@ public final class DirectLiveCapture {
      * The native row generator receives the thread separately from its row metadata. This gives
      * rows without an embedded thread id a second source scoped to the same batch and session.
      */
-    private static void installRowBatchFallback(ClassLoader loader) throws ReflectiveOperationException {
+    private static void installRowBatchCapture(ClassLoader loader) throws ReflectiveOperationException {
         Class<?> generator = Class.forName("X.01CY", false, loader);
         Class<?> controller = Class.forName("X.09WC", false, loader);
         Method getThreadKey = findNoArg(controller, "Ccj", threadKey.getType());
@@ -315,12 +315,15 @@ public final class DirectLiveCapture {
                     JitGuard.tick(param.method);
                     if (param.hasThrowable() || !FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
                     try {
-                        if (ImportRequest.validKey(threadFromMetadata(param.args[2]))) return;
-                        Object owner = param.args[3];
-                        if (!controller.isInstance(owner) || !(param.args[4] instanceof List<?> items)) return;
-                        Object key = getThreadKey.invoke(owner);
+                        if (!(param.args[4] instanceof List<?> items)) return;
+                        String thread = threadFromMetadata(param.args[2]);
+                        if (!ImportRequest.validKey(thread)) {
+                            Object owner = param.args[3];
+                            if (!controller.isInstance(owner)) return;
+                            Object key = getThreadKey.invoke(owner);
+                            thread = key == null ? null : (String) threadId.get(key);
+                        }
                         Object session = generatorSession.get(param.thisObject);
-                        String thread = key == null ? null : (String) threadId.get(key);
                         String account = session == null ? null : (String) sessionUser.get(session);
                         if (!ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) {
                             discard("row_batch_identity_unavailable");
@@ -332,7 +335,7 @@ public final class DirectLiveCapture {
                     }
                 }
             });
-            ModuleLog.line("(IE|MediaLibrary) 454 native row batch fallback installed");
+            ModuleLog.line("(IE|MediaLibrary) 454 native row batch observer installed");
             return;
         }
         throw new NoSuchMethodException("Direct row batch");

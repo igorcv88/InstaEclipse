@@ -99,8 +99,7 @@ public final class DirectConsolidation {
                 coverage.settle(packageName, accountKey, threadKey, offer.identity,
                         DirectCoverage.State.UNAVAILABLE, null, VIEW_ONCE_NOT_FETCHED);
             } else if (!DirectStoreRow.isCdnUrl(offer.url)) {
-                coverage.settle(packageName, accountKey, threadKey, offer.identity,
-                        DirectCoverage.State.UNAVAILABLE, null, NO_URL);
+                coverage.settleMissingSourceOffer(packageName, accountKey, threadKey, offer.identity, NO_URL);
             } else {
                 recordSource(packageName, accountKey, threadKey, offer.identity, offer.url);
             }

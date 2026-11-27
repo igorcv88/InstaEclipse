@@ -411,4 +411,23 @@ public final class DirectConsolidationTest {
         }
     }
 
+    @Test public void aLaterPageWithoutASourceDoesNotCancelAnEligibleOffer() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("eligible-page"), jpeg(62006));
+            DirectStoreRow eligible = DirectStoreRow.parse(ME, THREAD, "62006", "media", 1,
+                    row("62006", PEER, "media", imageMedia("eligible-page")));
+            DirectStoreRow placeholder = DirectStoreRow.parse(ME, THREAD, "62006", "media", 1,
+                    new JSONObject().put("item_id", "62006").put("item_type", "media")
+                            .put("user_id", PEER).toString());
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(eligible), false);
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(placeholder), false);
+
+            assertEquals(DirectCoverage.State.PENDING,
+                    consolidation.coverage().stateOf(INSTAGRAM, ME, THREAD, "62006", false));
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
 }

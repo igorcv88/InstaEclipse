@@ -198,6 +198,17 @@ public final class DirectCoverage {
      */
     public State settle(String packageName, String accountKey, String threadKey, Discovered item, State outcome,
                         String itemUuid, String error) throws IOException {
+        return settle(packageName, accountKey, threadKey, item, outcome, itemUuid, error, false);
+    }
+
+    /** A row without a source must not cancel work for an earlier usable offer. */
+    State settleMissingSourceOffer(String packageName, String accountKey, String threadKey,
+                                   Discovered item, String error) throws IOException {
+        return settle(packageName, accountKey, threadKey, item, State.UNAVAILABLE, null, error, true);
+    }
+
+    private State settle(String packageName, String accountKey, String threadKey, Discovered item, State outcome,
+                         String itemUuid, String error, boolean preserveSource) throws IOException {
         if (outcome == State.PENDING) throw new IllegalArgumentException("PENDING is not an outcome");
         ImportRequest.forConversation(packageName, accountKey, threadKey).validate();
         Sql sql = library.sql();
@@ -205,7 +216,7 @@ public final class DirectCoverage {
             return sql.inTransaction(() -> {
                 long account = library.ensureAccount(packageName, accountKey);
                 long now = library.now();
-                List<Map<String, Object>> rows = sql.query("SELECT state FROM direct_items "
+                List<Map<String, Object>> rows = sql.query("SELECT state, source_url FROM direct_items "
                                 + "WHERE account_id=? AND thread_key=? AND message_key=? AND from_me=?",
                         account, threadKey, item.messageKey, item.fromMe ? 1 : 0);
                 if (rows.isEmpty()) {
@@ -214,10 +225,12 @@ public final class DirectCoverage {
                                     + "VALUES (?,?,?,?,?,?,?,?,?,'pending')",
                             account, threadKey, item.messageKey, item.fromMe ? 1 : 0, item.mediaKind,
                             item.viewOnce ? 1 : 0, item.timestamp, now, now);
-                    rows = sql.query("SELECT state FROM direct_items WHERE account_id=? AND thread_key=? "
+                    rows = sql.query("SELECT state, source_url FROM direct_items WHERE account_id=? AND thread_key=? "
                             + "AND message_key=? AND from_me=?", account, threadKey, item.messageKey, item.fromMe ? 1 : 0);
                 }
                 State current = State.of(Sql.Rows.getString(rows.get(0), "state"));
+                if (preserveSource && (current == State.PENDING || current == State.FAILED)
+                        && Sql.Rows.getString(rows.get(0), "source_url") != null) return current;
                 State next = transition(current, outcome);
                 if (next == current && current.isFinal()) return current;
                 sql.update("UPDATE direct_items SET state=?, attempts=attempts+?, last_error=?, "

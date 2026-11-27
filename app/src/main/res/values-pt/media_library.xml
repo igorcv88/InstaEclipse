@@ -73,7 +73,7 @@
     <string name="media_library_consolidate_thread_body">O InstaEclipse já guarda as fotos e vídeos de uma conversa conforme o Instagram os mostra. Isto também lê os poucos itens que o Instagram mantém neste aparelho para esta conversa. Mídias de visualização única e com repetição só são guardadas depois que você as abre no Instagram, ou quando são suas.</string>
     <string name="media_library_consolidate_account_body">Lê os poucos itens de mídia que o Instagram mantém neste aparelho para todas as conversas desta conta. O Instagram 454 não guarda o histórico das conversas no aparelho: as mídias são guardadas conforme você abre e rola as conversas. Mídias de visualização única e com repetição só são guardadas depois que você as abre, ou quando são suas.</string>
     <string name="media_library_consolidate_start">Iniciar</string>
-    <string name="media_library_consolidate_queued">%1$d itens enviados à biblioteca de %2$d mensagens em cache (%3$d ilegíveis). As cópias continuam em segundo plano.</string>
+    <string name="media_library_consolidate_queued">Varredura do cache: %2$d mensagens, %1$d itens enviados à biblioteca (%3$d mensagens ilegíveis). %4$d itens tinham uma fonte elegível. Confira na biblioteca as cópias concluídas.</string>
     <string name="media_library_consolidate_failed">Não foi possível ler o cache local do Instagram (%1$s).</string>
     <string name="media_library_consolidate_busy">Uma leitura já está em andamento.</string>
     <string name="media_library_coverage_title">Cobertura do Direct</string>

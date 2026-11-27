@@ -45,6 +45,7 @@ public final class DirectStoreScanner {
     public static final class Result {
         /** {@code offered} counts parts the module accepted; a refused page stops the scan. */
         public int rows, offered, refusedRows;
+        public int fetchable;
         public boolean accepted;
         /** True when a read limit stopped the scan before the cache was exhausted. */
         public boolean truncated;
@@ -80,6 +81,7 @@ public final class DirectStoreScanner {
                     Result one = scan(app, accountId, thread);
                     total.rows += one.rows;
                     total.offered += one.offered;
+                    total.fetchable += one.fetchable;
                     total.truncated |= one.truncated;
                     total.refusedRows += one.refusedRows;
                     total.accepted |= one.accepted;
@@ -185,7 +187,10 @@ public final class DirectStoreScanner {
                         return result;
                     }
                     result.accepted = true;
-                    for (DirectStoreRow row : send) result.offered += row.parts.size();
+                    for (DirectStoreRow row : send) {
+                        result.offered += row.parts.size();
+                        for (DirectStoreRow.Part part : row.parts) if (part.fetchAllowed) result.fetchable++;
+                    }
                 }
                 if (page.size() < PAGE) break;
                 if (result.rows >= MAX_ROWS_PER_SCAN) result.truncated = true;
@@ -197,7 +202,7 @@ public final class DirectStoreScanner {
             if (db != null) db.close();
         }
         ModuleLog.line("(IE|MediaLibrary) direct store scan rows=" + result.rows + " offered=" + result.offered
-                + " refused=" + result.refusedRows + (result.error == null ? "" : " error=" + result.error));
+                + " fetchable=" + result.fetchable + " refused=" + result.refusedRows + (result.error == null ? "" : " error=" + result.error));
         return result;
     }
 

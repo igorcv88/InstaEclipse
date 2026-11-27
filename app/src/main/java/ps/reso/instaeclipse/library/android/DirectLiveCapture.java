@@ -163,6 +163,11 @@ public final class DirectLiveCapture {
             } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
                 discard("row_batch_hook_" + mismatch.getClass().getSimpleName());
             }
+            try {
+                installSharedMediaCapture(loader);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+                discard("shared_media_model_hook_" + mismatch.getClass().getSimpleName());
+            }
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             ModuleLog.line("(IE|MediaLibrary) live capture unavailable: " + mismatch);
         }
@@ -210,7 +215,7 @@ public final class DirectLiveCapture {
             }
             if (!isMediaType(name)) return;
             String thread = threadFromMetadata(rowMetadata.get(context));
-            captureScoped(model, (String) sessionUser.get(session), thread, name);
+            captureScoped(model, (String) sessionUser.get(session), thread, name, false);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
         }
@@ -230,7 +235,8 @@ public final class DirectLiveCapture {
         return "MEDIA".equals(name) || "EXPIRING_MEDIA".equals(name) || "VISUAL_MEDIA".equals(name);
     }
 
-    private static boolean captureScoped(Object model, String account, String sourceThread, String type)
+    private static boolean captureScoped(Object model, String account, String sourceThread, String type,
+                                         boolean fromSharedMedia)
             throws ReflectiveOperationException {
         String id = (String) serverId.invoke(model);
         Object key = threadKey.get(model);
@@ -244,7 +250,7 @@ public final class DirectLiveCapture {
         if (!ImportRequest.validKey(id)) { discard("no_message_id type=" + type); return false; }
         if (!ImportRequest.validKey(account)) { discard("no_account type=" + type); return false; }
         if (!ImportRequest.validKey(thread)) { discard("no_thread_key type=" + type); return false; }
-        capture(model, id, account, thread, type);
+        capture(model, id, account, thread, type, fromSharedMedia);
         return true;
     }
 
@@ -331,6 +337,39 @@ public final class DirectLiveCapture {
         throw new NoSuchMethodException("Direct row batch");
     }
 
+    /** Taps original Direct messages used by Shared media. Thumbnail-only records carry no
+     * reliable view mode or open state, so those never enter the capture pipeline. */
+    private static void installSharedMediaCapture(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> gallery = Class.forName("X.0CXS", false, loader);
+        Field sessionField = field(gallery, "A04", SESSION);
+        for (Method method : gallery.getDeclaredMethods()) {
+            Class<?>[] types = method.getParameterTypes();
+            if (!method.getName().equals("A09") || Modifier.isStatic(method.getModifiers())
+                    || method.getReturnType() != List.class || types.length != 1
+                    || types[0] != rowModel.getType()) continue;
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    JitGuard.tick(param.method);
+                    if (param.hasThrowable() || !FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation
+                            || !(param.getResult() instanceof List<?> items) || items.isEmpty()) return;
+                    try {
+                        Object model = param.args[0];
+                        Object session = sessionField.get(param.thisObject);
+                        if (model == null || session == null) return;
+                        String type = modelType(model);
+                        if (!isMediaType(type)) return;
+                        captureScoped(model, (String) sessionUser.get(session), null, type, true);
+                    } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                        discard("shared_media_model_" + failure.getClass().getSimpleName());
+                    }
+                }
+            });
+            ModuleLog.line("(IE|MediaLibrary) 454 shared media message observer installed");
+            return;
+        }
+        throw new NoSuchMethodException("Shared media message projection");
+    }
+
     private static void enqueuePage(List<?> items, String account, String thread,
                                     String source, String details) {
         if (items.size() > 512) { discard("native_page_too_large"); return; }
@@ -357,7 +396,7 @@ public final class DirectLiveCapture {
                 if (!rowModel.getType().isInstance(model)) continue;
                 try {
                     String type = modelType(model);
-                    if (isMediaType(type) && captureScoped(model, account, thread, type)) resolved++;
+                    if (isMediaType(type) && captureScoped(model, account, thread, type, false)) resolved++;
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_item_" + failure.getClass().getSimpleName());
                 }
@@ -369,8 +408,8 @@ public final class DirectLiveCapture {
         }
     }
 
-    private static void capture(Object model, String id, String account, String thread, String type)
-            throws ReflectiveOperationException {
+    private static void capture(Object model, String id, String account, String thread, String type,
+                                boolean fromSharedMedia) throws ReflectiveOperationException {
         try {
             long micros = (long) timestamp.invoke(model);
             StringWriter json = new StringWriter();
@@ -385,6 +424,12 @@ public final class DirectLiveCapture {
                     .originalMode(visualModel.get(model));
             DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
             if (row == null) { discard("parse_refused type=" + type + " item_type=" + itemType); return; }
+            // A persisted "permanent" visual model may be an older, already rewritten row.
+            if (fromSharedMedia && !DirectStoreRow.TYPE_MEDIA.equals(itemType) && !row.viewOnce
+                    && !account.equals(row.senderId) && !row.seenByViewer) {
+                discard("shared_media_visual_mode_unverified");
+                return;
+            }
             DirectLiveOfferQueue.Add added = queue.add(row);
             if (added == DirectLiveOfferQueue.Add.FULL) discard("live_offer_queue_full");
             if (added != DirectLiveOfferQueue.Add.QUEUED) return;
@@ -396,7 +441,8 @@ public final class DirectLiveCapture {
             }
             ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
                     + " fetchable=" + allowed + " missing_source=" + missingSource + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
-                    + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId));
+                    + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId)
+                    + (fromSharedMedia ? " source=shared_media" : ""));
         } catch (org.json.JSONException failure) {
             discard("json " + failure.getClass().getSimpleName());
         }

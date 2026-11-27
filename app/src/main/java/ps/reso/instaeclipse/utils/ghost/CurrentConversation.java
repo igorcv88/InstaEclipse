@@ -154,6 +154,9 @@ public final class CurrentConversation {
             return ConversationIdentity.fromKeyDescription(key.toString());
         } catch (Throwable ignored) { return null; }
     }
+    /** The resumed activity, or null. Callers still resolve and validate a conversation from it. */
+    public static Activity foregroundActivity() { return foreground.get(); }
+
     public static Snapshot resolve(Activity activity) {
         if (Looper.myLooper() != Looper.getMainLooper() || activity == null || activity.isFinishing()
                 || activity.isDestroyed() || foreground.get() != activity) return unresolved("no resumed activity");

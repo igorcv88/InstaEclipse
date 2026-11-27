@@ -57,6 +57,22 @@ public final class DirectLiveCapture {
             return size() > SEEN_LIMIT;
         }
     };
+    /** Discard reasons already logged, with counts; each reason is logged at most a few times. */
+    private static final Map<String, Integer> discards = new LinkedHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicInteger firstRows =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private static final Handler main = new Handler(android.os.Looper.getMainLooper());
+
+    private static void discard(String reason) {
+        int count;
+        synchronized (discards) {
+            count = discards.merge(reason, 1, Integer::sum);
+        }
+        if (count <= 3 || count % 100 == 0) {
+            ModuleLog.line("(IE|MediaLibrary) live capture discarded reason=" + reason + " count=" + count);
+        }
+    }
+
     /** Pending rows per account|thread, keyed by message id: a later state replaces an earlier one. */
     private static final Map<String, Map<String, DirectStoreRow>> pending = new LinkedHashMap<>();
 
@@ -138,17 +154,52 @@ public final class DirectLiveCapture {
                     if (sessionClass.isInstance(arg)) session = arg;
                     else if (messageContextClass.isInstance(arg)) context = arg;
                 }
-                if (session == null || context == null) return;
+                if (session == null || context == null) { discard("no_session_or_context"); return; }
                 Object model = rowModel.get(context);
-                if (model == null) return;
+                if (model == null) { discard("no_model"); return; }
                 Object type = messageType.get(model);
-                String name = type instanceof Enum<?> e ? e.name() : null;
+                String name = type instanceof Enum<?> e ? e.name() : String.valueOf(type);
+                if (firstRows.getAndIncrement() < 5) {
+                    ModuleLog.line("(IE|MediaLibrary) live capture saw a row type=" + name
+                            + " builder=" + param.method.getDeclaringClass().getName() + "." + param.method.getName());
+                }
                 if (!"MEDIA".equals(name) && !"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
                 String id = (String) serverId.invoke(model);
                 Object key = threadKey.get(model);
                 String thread = key == null ? null : (String) threadId.get(key);
                 String account = (String) sessionUser.get(session);
-                if (!ImportRequest.validKey(id) || !ImportRequest.validKey(thread) || !ImportRequest.validKey(account)) return;
+                if (!ImportRequest.validKey(id)) { discard("no_server_id type=" + name); return; }
+                if (!ImportRequest.validKey(account)) { discard("no_account"); return; }
+                if (!ImportRequest.validKey(thread)) {
+                    // Messages loaded from the server may carry no thread key on the model; use the
+                    // conversation open on screen, resolved and validated on the main thread.
+                    Object pendingModel = model;
+                    main.post(() -> fromForeground(pendingModel, id, account, name));
+                    return;
+                }
+                capture(model, id, account, thread, name);
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
+            }
+        }
+    };
+
+    private static void fromForeground(Object model, String id, String account, String type) {
+        try {
+            android.app.Activity activity = ps.reso.instaeclipse.utils.ghost.CurrentConversation.foregroundActivity();
+            ps.reso.instaeclipse.utils.ghost.CurrentConversation.Snapshot snapshot = activity == null ? null
+                    : ps.reso.instaeclipse.utils.ghost.CurrentConversation.resolve(activity);
+            if (snapshot == null) { discard("no_thread_and_no_foreground_conversation type=" + type); return; }
+            if (!account.equals(snapshot.accountId)) { discard("foreground_account_differs"); return; }
+            capture(model, id, account, snapshot.threadId, type);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+            ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
+        }
+    }
+
+    private static void capture(Object model, String id, String account, String thread, String type)
+            throws ReflectiveOperationException {
+        try {
                 long micros = (long) timestamp.invoke(model);
                 StringWriter json = new StringWriter();
                 Object generator = newGenerator.invoke(jsonFactory, json);
@@ -161,7 +212,7 @@ public final class DirectLiveCapture {
                 String rewritten = ps.reso.instaeclipse.mods.ghost.GhostPermanentViewHook
                         .originalMode(visualModel.get(model));
                 DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
-                if (row == null) return;
+                if (row == null) { discard("parse_refused type=" + type + " item_type=" + itemType); return; }
                 // Offered again when fetchability or a URL changes: a view-once the user opened, or
                 // a refreshed CDN URL after the previous one expired.
                 StringBuilder state = new StringBuilder();
@@ -178,11 +229,10 @@ public final class DirectLiveCapture {
                         + " fetchable=" + allowed + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
                         + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId));
                 enqueue(row);
-            } catch (ReflectiveOperationException | RuntimeException | org.json.JSONException | LinkageError failure) {
-                ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure.getClass().getSimpleName());
-            }
+        } catch (org.json.JSONException failure) {
+            discard("json " + failure.getClass().getSimpleName());
         }
-    };
+    }
 
     private static void enqueue(DirectStoreRow row) {
         String scope = row.accountId + '|' + row.threadId;

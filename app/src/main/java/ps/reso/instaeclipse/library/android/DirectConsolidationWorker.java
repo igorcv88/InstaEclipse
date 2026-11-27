@@ -90,6 +90,11 @@ public final class DirectConsolidationWorker {
                 if (request == Request.RETRY_FAILURES) consolidation.resetFailures(DirectStoreScanner.HOST);
                 run(app, consolidation);
             } catch (IOException | RuntimeException failure) {
+                if (request != Request.PAUSE) {
+                    DirectConsolidation.RunReport failed = new DirectConsolidation.RunReport();
+                    failed.stoppedOnFailure = true;
+                    last = failed;
+                }
                 Log.w(TAG, "request=" + request + " failed: " + failure.getClass().getSimpleName());
             }
         }

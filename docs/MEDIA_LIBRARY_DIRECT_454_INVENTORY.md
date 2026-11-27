@@ -73,6 +73,14 @@ O ID usado pelo `CurrentConversation` (`thread:`), o `thread_id` de `direct.db` 
 
 `DirectLiveCapture` intercepta esses construtores, serializa o modelo de mensagens `media`, `raven_media` e `visual_media`, aplica o mesmo `DirectStoreRow` e oferece ao módulo em lotes de 1,5 s, uma vez por mensagem e estado. Visualização única e com repetição só recebem URL quando a conta é a remetente ou já aparece em `seen_user_ids`.
 
+## Interação com "Visualização única ilimitada"
+
+`GhostPermanentViewHook` (opção `permanentViewMode`) reescreve `view_mode` de `once`/`replayable` para `permanent` no objeto `X.02jG` devolvido pelo parser, antes de o Instagram gravar `direct.db` e antes da captura serializar o modelo. Com a opção ligada, `permanent` deixa de provar que a mídia é permanente. As 4 linhas do teste físico podem ter sido visualização única reescrita.
+
+Correção: o hook passa a registrar o modo original por objeto (`ORIGINAL_BY_OBJECT`, chaves fracas) e a captura ao vivo classifica pelo modo original. Com a opção ligada, o Instagram já exibe essas mídias como permanentes e abri-las não consome a visualização, então a captura é permitida e o item entra na biblioteca marcado como visualização única. Sem a opção, vale a regra de própria ou já aberta.
+
+Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o modo original. A varredura do cache continua classificando essas linhas como permanentes.
+
 ## Pendências que dependem de aparelho
 
 1. Dump de uma linha `media` de teste: `adb shell su -c "sqlite3 /data/data/com.instagram.android/databases/direct.db 'select server_item_id, message_type, substr(message,1,2000) from messages where message_type=\"media\" limit 1'"`. Confirma o aninhamento de `image_versions2.candidates` e `video_versions`.

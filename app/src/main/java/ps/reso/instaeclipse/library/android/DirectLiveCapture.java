@@ -44,7 +44,7 @@ public final class DirectLiveCapture {
     private static final int SEEN_LIMIT = 4_096;
 
     private static volatile Context appContext;
-    private static Field rowModel, messageType, threadKey, threadId, sessionUser;
+    private static Field rowModel, messageType, threadKey, threadId, sessionUser, visualModel;
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
     private static Handler worker;
@@ -72,6 +72,7 @@ public final class DirectLiveCapture {
             threadKey = field(base, "A0T", "com.instagram.model.direct.DirectThreadKey");
             threadId = field(threadKey.getType(), "A00", String.class.getName());
             sessionUser = field(session, "userId", String.class.getName());
+            visualModel = field(model, "A0J", "X.02jG");
             serverId = model.getMethod("A0o");
             timestamp = model.getMethod("A0J");
             if (serverId.getReturnType() != String.class || timestamp.getReturnType() != long.class) {
@@ -132,7 +133,11 @@ public final class DirectLiveCapture {
                 generator.getClass().getMethod("close").invoke(generator);
                 String text = json.toString();
                 String itemType = new org.json.JSONObject(text).optString("item_type", null);
-                DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text);
+                // "Unlimited View Once" rewrites view_mode to "permanent" in this very model; classify
+                // by the original mode it recorded.
+                String rewritten = ps.reso.instaeclipse.mods.ghost.GhostPermanentViewHook
+                        .originalMode(visualModel.get(model));
+                DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
                 if (row == null) return;
                 boolean fetchable = false;
                 for (DirectStoreRow.Part part : row.parts) fetchable |= part.fetchAllowed;

@@ -357,4 +357,17 @@ public final class DirectConsolidationTest {
             assertEquals("captured", kept.origin);
         }
     }
+
+    @Test public void aModeRewrittenByUnlimitedViewOnceIsClassifiedByItsOriginalMode() throws Exception {
+        String json = row("62001", PEER, "visual_media", visual("permanent", "rw"));
+        DirectStoreRow asStored = DirectStoreRow.parse(ME, THREAD, "62001", "visual_media", 1, json);
+        assertFalse("without the original, the rewritten row reads as permanent", asStored.viewOnce);
+        DirectStoreRow restored = DirectStoreRow.parse(ME, THREAD, "62001", "visual_media", 1, json, "once");
+        assertTrue(restored.viewOnce);
+        assertTrue(restored.parts.get(0).identity.viewOnce);
+        assertTrue("Instagram already shows it as permanent media", restored.parts.get(0).fetchAllowed);
+        DirectStoreRow replay = DirectStoreRow.parse(ME, THREAD, "62002", "visual_media", 1,
+                row("62002", PEER, "visual_media", visual("permanent", "rp")), "replayable");
+        assertTrue(replay.viewOnce);
+    }
 }

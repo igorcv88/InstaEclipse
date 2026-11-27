@@ -93,6 +93,17 @@ public final class DirectStoreRow {
      */
     public static DirectStoreRow parse(String accountId, String threadId, String serverItemId, String messageType,
                                        long timestampMicros, String json) {
+        return parse(accountId, threadId, serverItemId, messageType, timestampMicros, json, null);
+    }
+
+    /**
+     * @param rewrittenMode the original view mode when InstaEclipse's own "Unlimited View Once"
+     *                      option rewrote it to "permanent" in Instagram's model; null otherwise.
+     *                      The item is then classified by its real mode. Because Instagram already
+     *                      shows it as permanent media, fetching it consumes nothing and is allowed.
+     */
+    public static DirectStoreRow parse(String accountId, String threadId, String serverItemId, String messageType,
+                                       long timestampMicros, String json, String rewrittenMode) {
         if (!ImportRequest.validKey(accountId) || !ImportRequest.validKey(threadId)
                 || !ImportRequest.validKey(serverItemId) || !isMediaType(messageType) || json == null) return null;
         JSONObject message;
@@ -123,6 +134,7 @@ public final class DirectStoreRow {
             if (media == null && raven != null) media = raven;
             String mode = visual != null ? visual.optString("view_mode", message.optString("view_mode", ""))
                     : message.optString("view_mode", "");
+            if (rewrittenMode != null && !"permanent".equals(rewrittenMode)) mode = rewrittenMode;
             // Unknown mode on an expiring type is treated as view-once: never fetched automatically.
             viewOnce = !"permanent".equals(mode);
             JSONArray seenBy = visual != null ? visual.optJSONArray("seen_user_ids") : null;
@@ -139,10 +151,11 @@ public final class DirectStoreRow {
                 for (int i = 0; i < carousel.length() && i < 20; i++) {
                     JSONObject slide = carousel.optJSONObject(i);
                     if (slide == null) continue;
-                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen, timestampMs, slide));
+                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen || rewrittenMode != null,
+                            timestampMs, slide));
                 }
             } else {
-                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen, timestampMs, media));
+                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen || rewrittenMode != null, timestampMs, media));
             }
         } else {
             parts.add(new Part(new DirectCoverage.Discovered(serverItemId, fromMe, "unknown", viewOnce, timestampMs), null));

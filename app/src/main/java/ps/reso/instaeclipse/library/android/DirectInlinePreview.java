@@ -16,6 +16,8 @@ import android.widget.ImageView;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -44,7 +46,10 @@ final class DirectInlinePreview {
         /** Visual (view-once/replay) bubble: native children hidden while the copy is shown. */
         View[] hidden;
         int[] hiddenVisibility;
+        /** Resize the frame to a photo bubble (the "(1) Photo" pill). */
         boolean visual;
+        /** An ephemeral row: hide the native glyphs while the copy is shown. */
+        boolean ephemeral;
     }
 
     private DirectInlinePreview() {}
@@ -61,34 +66,49 @@ final class DirectInlinePreview {
     }
 
     /**
-     * 454 visual row (view-once, replay, keep in chat): X.02vL binds holder X.0AHX (A04 bubble
-     * frame, A05 icon, A06 label, A08 progress) to model X.0E34, whose identity lives in X.03QJ
-     * like the conventional row's. With a kept copy for exactly this message, the bubble shows
-     * the copy as a photo and opens it from the library; otherwise it stays native.
+     * 454 ephemeral rows (view-once, replay, keep in chat, expired). Both bind a model that extends
+     * X.0B79, whose delegate (X.0B79.A00) is the row props X.03QJ: identifier CpM(), thread A05,
+     * direction A09, as on the conventional row.
+     * <ul>
+     *   <li>X.02vL pill ("(1) Photo"): holder X.0AHX, bubble frame A04, icon A05, label A06,
+     *       progress A08; the pill becomes a photo bubble.</li>
+     *   <li>X.0ThE thumbnail tile (blurred or expired noise): holder X.0Ths, frame A01, image A03,
+     *       glyph A02; the copy covers the tile.</li>
+     * </ul>
+     * With a kept copy for exactly this message the copy is shown and opens from the library;
+     * otherwise the row stays native.
      */
     private void hookVisual(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> definition = DirectLibraryHook.hostClass(loader, "X.02vL");
-        Class<?> holder = DirectLibraryHook.hostClass(loader, "X.0AHX");
-        Class<?> model = DirectLibraryHook.hostClass(loader, "X.0E34");
+        hookEphemeralRow(loader, "X.02vL", "X.0AHX", "A04", new String[] {"A05", "A06", "A08"}, true);
+        hookEphemeralRow(loader, "X.0ThE", "X.0Ths", "A01", new String[] {"A02"}, false);
+        ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) 454 visual inline installed");
+    }
+
+    private void hookEphemeralRow(ClassLoader loader, String definitionName, String holderName, String frameName,
+                                  String[] hiddenNames, boolean resize) throws ReflectiveOperationException {
+        Class<?> definition = DirectLibraryHook.hostClass(loader, definitionName);
+        Class<?> holder = DirectLibraryHook.hostClass(loader, holderName);
+        Class<?> rowBase = DirectLibraryHook.hostClass(loader, "X.0B79");
+        Class<?> rowProps = DirectLibraryHook.hostClass(loader, "X.03QJ");
         Class<?> sessionType = DirectLibraryHook.hostClass(loader, "com.instagram.common.session.UserSession");
         Class<?> identifierType = DirectLibraryHook.hostClass(loader, "com.instagram.model.direct.messageid.MessageIdentifier");
         Class<?> hostHolder = DirectLibraryHook.hostClass(loader, "X.0YmP");
         Class<?> hostModel = DirectLibraryHook.hostClass(loader, "X.0mbl");
         Method bind = definition.getDeclaredMethod("AWs", hostHolder, hostModel);
         Method unbind = definition.getDeclaredMethod("Hjg", hostHolder);
-        Method parentId = model.getMethod("CpM");
-        Method kind = model.getMethod("BrO");
-        Field frame = field(holder, "A04");
-        Field icon = field(holder, "A05");
-        Field label = field(holder, "A06");
-        Field progress = field(holder, "A08");
+        Method parentId = rowBase.getMethod("CpM");
+        Method kind = rowBase.getMethod("BrO");
+        Field delegate = field(rowBase, "A00");
+        Field frame = field(holder, frameName);
+        Field[] hiddenFields = new Field[hiddenNames.length];
+        for (int i = 0; i < hiddenNames.length; i++) hiddenFields[i] = field(holder, hiddenNames[i]);
         Field session = field(definition, "A01");
         Field accountId = field(sessionType, "userId");
-        Field props = field(model, "A0D");
-        Field threadId = field(props.getType(), "A05");
-        Field direction = field(props.getType(), "A09");
+        Field threadId = field(rowProps, "A05");
+        Field direction = field(rowProps, "A09");
         Field serverId = field(identifierType, "A01");
         Field clientContext = field(identifierType, "A00");
+        String stage = resize ? "inline_visual" : "inline_tile";
 
         XposedBridge.hookMethod(unbind, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam call) throws IllegalAccessException {
@@ -104,48 +124,51 @@ final class DirectInlinePreview {
 
             @Override protected void afterHookedMethod(MethodHookParam call) {
                 if (call.hasThrowable() || !mainThread() || !FeatureFlags.directMediaLibrary
-                        || !holder.isInstance(call.args[0]) || !model.isInstance(call.args[1])) return;
+                        || !holder.isInstance(call.args[0]) || !rowBase.isInstance(call.args[1])) return;
                 try {
                     Object row = call.args[1];
-                    Object type = kind.invoke(row);
-                    String name = type instanceof Enum<?> e ? e.name() : null;
-                    if (!"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
                     if (!(frame.get(call.args[0]) instanceof FrameLayout container)) return;
+                    Object props = delegate.get(row);
+                    if (!rowProps.isInstance(props)) {
+                        DirectTrace.summary(stage, "result=no_row_props");
+                        return;
+                    }
                     Object identifier = parentId.invoke(row);
                     if (!identifierType.isInstance(identifier)) return;
                     String key = (String) serverId.get(identifier);
                     String local = (String) clientContext.get(identifier);
                     if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)) return;
                     Object nativeSession = session.get(call.thisObject);
-                    Object rowProps = props.get(row);
-                    if (nativeSession == null || rowProps == null) return;
+                    if (nativeSession == null) return;
                     String account = (String) accountId.get(nativeSession);
-                    String thread = (String) threadId.get(rowProps);
+                    String thread = (String) threadId.get(props);
                     Activity activity = activity(container.getContext());
                     if (activity == null) return;
                     CurrentConversation.Snapshot foreground = CurrentConversation.resolve(activity);
                     if (foreground == null || !foreground.accountId.equals(account)
                             || !foreground.threadId.equals(thread)) {
-                        DirectTrace.event(account, thread, key, "inline_visual", "result=scope_unavailable");
+                        DirectTrace.event(account, thread, key, stage, "result=scope_unavailable");
                         return;
                     }
+                    Object type = kind.invoke(row);
+                    DirectTrace.event(account, thread, key, stage, "result=lookup kind="
+                            + (type instanceof Enum<?> e ? e.name() : String.valueOf(type)));
                     ImportRequest selection = ImportRequest.forMessage(DirectStoreScanner.HOST,
-                            account, thread, key, direction.getBoolean(rowProps));
+                            account, thread, key, direction.getBoolean(props));
                     Binding binding = request(container, activity, foreground, selection);
-                    binding.visual = true;
-                    Object[] natives = { icon.get(call.args[0]), label.get(call.args[0]), progress.get(call.args[0]) };
-                    int count = 0;
-                    for (Object view : natives) if (view instanceof View) count++;
-                    binding.hidden = new View[count];
-                    binding.hiddenVisibility = new int[count];
-                    int index = 0;
-                    for (Object view : natives) if (view instanceof View v) binding.hidden[index++] = v;
+                    binding.visual = resize;
+                    binding.ephemeral = true;
+                    List<View> natives = new ArrayList<>();
+                    for (Field hidden : hiddenFields) {
+                        if (hidden.get(call.args[0]) instanceof View view) natives.add(view);
+                    }
+                    binding.hidden = natives.toArray(new View[0]);
+                    binding.hiddenVisibility = new int[binding.hidden.length];
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
-                    DirectTrace.summary("inline_visual", "result=" + failure.getClass().getSimpleName());
+                    DirectTrace.summary(stage, "result=" + failure.getClass().getSimpleName());
                 }
             }
         });
-        ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) 454 visual inline installed");
     }
 
     private void hook(ClassLoader loader) throws ReflectiveOperationException {
@@ -169,7 +192,6 @@ final class DirectInlinePreview {
         Field threadId = field(props.getType(), "A05");
         Field direction = field(props.getType(), "A09");
         Field media = field(model, "A06");
-        Field privacyOverlay = field(media.getType(), "A0I");
         Field serverId = field(identifierType, "A01");
         Field clientContext = field(identifierType, "A00");
 
@@ -191,12 +213,15 @@ final class DirectInlinePreview {
                 try {
                     Object row = call.args[1];
                     Object type = kind.invoke(row);
-                    if (!(type instanceof Enum<?> e) || !"MEDIA".equals(e.name())) return;
+                    String name = type instanceof Enum<?> e ? e.name() : null;
+                    // Ephemeral media the client renders as a conventional row also get their copy.
+                    if (!"MEDIA".equals(name) && !"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
                     if (!(frame.get(call.args[0]) instanceof FrameLayout container)
                             || !(nativeImage.get(call.args[0]) instanceof View image)
                             || !contains(container, image)) return;
                     Object visual = media.get(row);
-                    if (visual == null || privacyOverlay.get(visual) != null) return;
+                    // A privacy overlay (blur) is covered by the copy instead of skipping the row.
+                    if (visual == null) return;
                     Object identifier = parentId.invoke(row);
                     if (!identifierType.isInstance(identifier)) return;
                     String key = (String) serverId.get(identifier);
@@ -292,12 +317,6 @@ final class DirectInlinePreview {
                             int height = Math.round(width * (float) thumbnail.getHeight() / Math.max(1, thumbnail.getWidth()));
                             height = Math.max(Math.round(140 * dp), Math.min(Math.round(340 * dp), height));
                             params = new FrameLayout.LayoutParams(width, height);
-                            if (binding.hidden != null) {
-                                for (int i = 0; i < binding.hidden.length; i++) {
-                                    binding.hiddenVisibility[i] = binding.hidden[i].getVisibility();
-                                    binding.hidden[i].setVisibility(View.GONE);
-                                }
-                            }
                             overlay.setClipToOutline(true);
                             overlay.setOutlineProvider(new android.view.ViewOutlineProvider() {
                                 @Override public void getOutline(View view, android.graphics.Outline outline) {
@@ -308,10 +327,17 @@ final class DirectInlinePreview {
                             params = new FrameLayout.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
                         }
+                        if (binding.ephemeral && binding.hidden != null) {
+                            for (int i = 0; i < binding.hidden.length; i++) {
+                                binding.hiddenVisibility[i] = binding.hidden[i].getVisibility();
+                                binding.hidden[i].setVisibility(View.GONE);
+                            }
+                        }
+                        overlay.setClickable(true);
                         frame.addView(overlay, params);
                         binding.overlay = overlay;
                         DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey,
-                                binding.visual ? "inline_visual" : "inline_bind",
+                                binding.visual ? "inline_visual" : binding.ephemeral ? "inline_tile" : "inline_bind",
                                 "result=applied from_me=" + selection.fromMe);
                     });
                 } catch (RuntimeException failure) {

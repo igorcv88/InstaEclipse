@@ -73,7 +73,21 @@ public final class LibraryLock {
         try {
             file = new RandomAccessFile(lockFile, "rw");
             FileChannel channel = file.getChannel();
-            FileLock fileLock = channel.lock();
+            // Bounded like the in-process wait: another process holding the file lock fails the
+            // call with "busy" instead of blocking it indefinitely.
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+            FileLock fileLock;
+            while ((fileLock = channel.tryLock()) == null) {
+                if (System.nanoTime() >= deadline) {
+                    throw new LibraryException(LibraryException.Code.IO, "The media library is busy");
+                }
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new LibraryException(LibraryException.Code.IO, "Interrupted while waiting for the library");
+                }
+            }
             return new Held(file, fileLock);
         } catch (IOException | RuntimeException failure) {
             if (file != null) try { file.close(); } catch (IOException ignored) { }

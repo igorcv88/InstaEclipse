@@ -1,5 +1,6 @@
 package ps.reso.instaeclipse.library.core;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -109,19 +110,59 @@ public final class DirectConsolidation {
         }
     }
 
+    /** Thrown through a transfer when the user paused or the feature was turned off. Never an outcome. */
+    public static final class Cancelled extends IOException {
+        public Cancelled() { super("Consolidation paused"); }
+    }
+
+    private static final String META_PAUSED = "direct_consolidation_paused";
+
     /**
-     * Fetches and imports up to {@code budget} items that have a recorded CDN URL and are not
-     * final, oldest first. The first transient failure stops the run so the item is retried next
-     * time; an expired URL is UNAVAILABLE until the scanner offers a fresh one.
+     * Work that may run: not view-once, a CDN URL recorded, and either not final (pending, failed
+     * under the retry limit, unavailable with a newer URL) or final but with its kept copy damaged
+     * or missing outside the trash, so a lost copy is repaired from the same message.
+     */
+    private static final String WORK = "FROM direct_items d JOIN accounts a ON a.id=d.account_id "
+            + "LEFT JOIN items i ON i.uuid=d.item_uuid LEFT JOIN blobs b ON b.sha256=i.sha256 "
+            + "WHERE a.package_name=? AND d.view_once=0 AND d.source_url IS NOT NULL "
+            + "AND (d.state='pending' OR (d.state='failed' AND d.attempts<?) "
+            + "OR (d.state='unavailable' AND d.source_seen_at>d.settled_at) "
+            + "OR (d.state IN ('imported','already_present') AND i.id IS NOT NULL AND i.trashed_at=0 "
+            + "AND b.state!='ok' AND d.source_seen_at>d.settled_at)) ";
+
+    /** Persistent: survives the process, so a restart never resumes paused work by itself. */
+    public void setPaused(boolean paused) throws IOException {
+        try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
+            library.sql().inTransaction(() -> {
+                library.sql().update("DELETE FROM meta WHERE key=?", META_PAUSED);
+                if (paused) library.sql().insert("INSERT INTO meta (key, value) VALUES (?, '1')", META_PAUSED);
+                return null;
+            });
+        }
+    }
+
+    public boolean isPaused() {
+        return !library.sql().query("SELECT 1 FROM meta WHERE key=?", META_PAUSED).isEmpty();
+    }
+
+    /** Explicit "continue": failed items past the retry limit get a fresh set of attempts. */
+    public int resetFailures(String packageName) throws IOException {
+        try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
+            return library.sql().update("UPDATE direct_items SET attempts=0 WHERE state='failed' AND account_id IN "
+                    + "(SELECT id FROM accounts WHERE package_name=?)", packageName);
+        }
+    }
+
+    /**
+     * Fetches and imports up to {@code budget} items, oldest first. The first transient failure
+     * stops the run so the item is retried next time; an expired URL is UNAVAILABLE until the
+     * scanner offers a fresh one. {@code cancelled} is checked between items and during every
+     * read, so a pause stops a large video mid-transfer without recording an outcome.
      */
     public RunReport run(String packageName, Fetcher fetcher, int budget, BooleanSupplier cancelled) throws IOException {
         RunReport report = new RunReport();
-        List<Map<String, Object>> work = library.sql().query("SELECT d.thread_key, d.message_key, d.from_me, "
-                        + "d.media_kind, d.view_once, d.message_timestamp, d.source_url, a.account_key "
-                        + "FROM direct_items d JOIN accounts a ON a.id=d.account_id "
-                        + "WHERE a.package_name=? AND d.view_once=0 AND d.source_url IS NOT NULL "
-                        + "AND (d.state='pending' OR (d.state='failed' AND d.attempts<?) "
-                        + "OR (d.state='unavailable' AND d.source_seen_at>d.settled_at)) "
+        List<Map<String, Object>> work = library.sql().query("SELECT d.id, d.state, d.thread_key, d.message_key, d.from_me, "
+                        + "d.media_kind, d.message_timestamp, d.source_url, a.account_key " + WORK
                         + "ORDER BY d.message_timestamp ASC, d.id ASC LIMIT ?",
                 packageName, DirectCoverage.MAX_ATTEMPTS, Math.max(1, budget));
         for (Map<String, Object> row : work) {
@@ -137,23 +178,44 @@ public final class DirectConsolidation {
                     Sql.Rows.getString(row, "media_kind"), false, Sql.Rows.getLong(row, "message_timestamp"));
             report.attempted++;
             DirectCapture.Outcome outcome;
-            if (!DirectStoreRow.isCdnUrl(url)) {
-                outcome = capture.capture(packageName, account, thread, identity, null);
-            } else {
-                final InputStream[] opened = new InputStream[1];
-                try {
-                    opened[0] = fetcher.open(url);
-                } catch (IOException transientFailure) {
-                    coverage.settle(packageName, account, thread, identity, DirectCoverage.State.FAILED, null, "fetch");
-                    report.failed++;
-                    report.stoppedOnFailure = true;
-                    break;
-                }
-                if (opened[0] == null) {
+            try {
+                if (!DirectStoreRow.isCdnUrl(url)) {
                     outcome = capture.capture(packageName, account, thread, identity, null);
                 } else {
-                    outcome = capture.capture(packageName, account, thread, identity, () -> opened[0]);
+                    InputStream opened;
+                    try {
+                        opened = fetcher.open(url);
+                    } catch (Cancelled paused) {
+                        throw paused;
+                    } catch (IOException transientFailure) {
+                        coverage.settle(packageName, account, thread, identity, DirectCoverage.State.FAILED, null, "fetch");
+                        report.failed++;
+                        report.stoppedOnFailure = true;
+                        break;
+                    }
+                    InputStream body = opened == null ? null : new FilterInputStream(opened) {
+                        @Override public int read() throws IOException {
+                            if (cancelled.getAsBoolean()) throw new Cancelled();
+                            return super.read();
+                        }
+
+                        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+                            if (cancelled.getAsBoolean()) throw new Cancelled();
+                            return super.read(buffer, offset, length);
+                        }
+                    };
+                    outcome = capture.capture(packageName, account, thread, identity, body == null ? null : () -> body);
                 }
+            } catch (Cancelled paused) {
+                report.attempted--;
+                report.cancelled = true;
+                break;
+            }
+            String before = Sql.Rows.getString(row, "state");
+            if ("imported".equals(before) || "already_present".equals(before)) {
+                // A repair attempt: the next one needs a newer URL from a later scan.
+                library.sql().update("UPDATE direct_items SET settled_at=? WHERE id=?", library.now(),
+                        Sql.Rows.getLong(row, "id"));
             }
             switch (outcome.state) {
                 case IMPORTED -> report.imported++;
@@ -169,12 +231,8 @@ public final class DirectConsolidation {
             }
             if (report.stoppedOnFailure) break;
         }
-        report.drained = !report.stoppedOnFailure && !report.cancelled && library.sql().query(
-                "SELECT 1 FROM direct_items d JOIN accounts a ON a.id=d.account_id WHERE a.package_name=? "
-                        + "AND d.view_once=0 AND d.source_url IS NOT NULL AND (d.state='pending' "
-                        + "OR (d.state='failed' AND d.attempts<?) "
-                        + "OR (d.state='unavailable' AND d.source_seen_at>d.settled_at)) LIMIT 1",
-                packageName, DirectCoverage.MAX_ATTEMPTS).isEmpty();
+        report.drained = !report.stoppedOnFailure && !report.cancelled
+                && library.sql().query("SELECT 1 " + WORK + "LIMIT 1", packageName, DirectCoverage.MAX_ATTEMPTS).isEmpty();
         return report;
     }
 

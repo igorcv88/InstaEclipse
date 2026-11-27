@@ -77,8 +77,9 @@
     <string name="media_library_consolidate_failed">Could not read Instagram\'s local cache (%1$s).</string>
     <string name="media_library_consolidate_busy">A scan is already running.</string>
     <string name="media_library_coverage_title">Direct coverage</string>
-    <string name="media_library_coverage_body">Chats: %1$d (%2$d complete)\nDiscovered: %3$d\nKept or already present: %4$d\nUnavailable now: %5$d (view-once never fetched: %6$d)\nRefused: %7$d · Ambiguous: %8$d\nWaiting or failed: %9$d\n\nOnly what Instagram already loaded on this device is covered. A chat counts as complete only when its start was reached and nothing is waiting.</string>
+    <string name="media_library_coverage_body">Chats: %1$d (%2$d complete)\nDiscovered: %3$d\nKept and available now: %4$d\nDamaged or missing (repaired on the next scan): %10$d · In the trash: %11$d\nUnavailable now: %5$d (view-once never fetched: %6$d)\nRefused: %7$d · Ambiguous: %8$d\nWaiting or failed: %9$d\n\nOnly what Instagram already loaded on this device is covered. A chat counts as complete only when its start was reached and nothing is waiting.</string>
     <string name="media_library_coverage_run">Continue copies</string>
     <string name="media_library_coverage_pause">Pause</string>
     <string name="media_library_coverage_action">Direct coverage</string>
+    <string name="media_library_consolidate_truncated">The scan reached its read limit. Part of the cache was not read; a new scan starts over and stops at the same limit.</string>
 </resources>

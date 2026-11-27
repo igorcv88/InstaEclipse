@@ -77,8 +77,9 @@
     <string name="media_library_consolidate_failed">Não foi possível ler o cache local do Instagram (%1$s).</string>
     <string name="media_library_consolidate_busy">Uma leitura já está em andamento.</string>
     <string name="media_library_coverage_title">Cobertura do Direct</string>
-    <string name="media_library_coverage_body">Conversas: %1$d (%2$d completas)\nDescobertos: %3$d\nGuardados ou já presentes: %4$d\nIndisponíveis agora: %5$d (visualização única nunca baixada: %6$d)\nRecusados: %7$d · Ambíguos: %8$d\nAguardando ou com falha: %9$d\n\nSó está coberto o que o Instagram já carregou neste aparelho. Uma conversa só conta como completa quando o início foi alcançado e nada está pendente.</string>
+    <string name="media_library_coverage_body">Conversas: %1$d (%2$d completas)\nDescobertos: %3$d\nGuardados e disponíveis agora: %4$d\nDanificados ou ausentes (reparados na próxima leitura): %10$d · Na lixeira: %11$d\nIndisponíveis agora: %5$d (visualização única nunca baixada: %6$d)\nRecusados: %7$d · Ambíguos: %8$d\nAguardando ou com falha: %9$d\n\nSó está coberto o que o Instagram já carregou neste aparelho. Uma conversa só conta como completa quando o início foi alcançado e nada está pendente.</string>
     <string name="media_library_coverage_run">Continuar cópias</string>
     <string name="media_library_coverage_pause">Pausar</string>
     <string name="media_library_coverage_action">Cobertura do Direct</string>
+    <string name="media_library_consolidate_truncated">A leitura chegou ao limite. Parte do cache não foi lida; uma nova leitura recomeça do início e para no mesmo limite.</string>
 </resources>

@@ -58,10 +58,15 @@ public final class DirectCapture {
             }
         } catch (LibraryException failure) {
             error = failure.code.name();
+            // INCOMPLETE_MEDIA stays retryable: a transfer cut short looks exactly like a damaged
+            // file, and a final REFUSED would lose the media for good. MAX_ATTEMPTS bounds it.
             outcome = switch (failure.code) {
-                case UNSUPPORTED_MEDIA, INCOMPLETE_MEDIA, TOO_LARGE, INVALID_REQUEST -> DirectCoverage.State.REFUSED;
+                case UNSUPPORTED_MEDIA, TOO_LARGE, INVALID_REQUEST -> DirectCoverage.State.REFUSED;
                 default -> DirectCoverage.State.FAILED;
             };
+        } catch (DirectConsolidation.Cancelled paused) {
+            // A pause is not an outcome: nothing is recorded and the attempt is not counted.
+            throw paused;
         } catch (IOException failure) {
             error = "IO";
             outcome = DirectCoverage.State.FAILED;

@@ -238,7 +238,8 @@ public final class ConversationMenuHook {
                 String text = result.error != null
                         ? I18n.t(activity, R.string.media_library_consolidate_failed, result.error)
                         : I18n.t(activity, R.string.media_library_consolidate_queued, result.offered, result.rows,
-                                result.refusedRows);
+                                result.refusedRows)
+                        + (result.truncated ? "\n" + I18n.t(activity, R.string.media_library_consolidate_truncated) : "");
                 android.widget.Toast.makeText(activity, text, android.widget.Toast.LENGTH_LONG).show();
             });
             boolean queued = account

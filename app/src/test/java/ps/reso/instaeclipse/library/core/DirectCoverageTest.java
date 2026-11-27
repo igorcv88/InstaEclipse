@@ -181,7 +181,8 @@ public final class DirectCoverageTest {
         }
     }
 
-    @Test public void incompleteBytesAreRefusedAndNeverStored() throws Exception {
+    /** Incomplete bytes are never stored, but stay retryable: a cut transfer looks the same. */
+    @Test public void incompleteBytesAreNeverStoredAndStayRetryable() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             MediaLibrary library = fixture.open();
             DirectCoverage coverage = new DirectCoverage(library);
@@ -189,7 +190,7 @@ public final class DirectCoverageTest {
             byte[] whole = jpeg(35001);
             byte[] truncated = Arrays.copyOf(whole, whole.length / 2);
             DirectCapture.Outcome refused = capture.capture(INSTAGRAM, ACCOUNT, THREAD, item("35001", 1), source(truncated));
-            assertEquals(DirectCoverage.State.REFUSED, refused.state);
+            assertEquals(DirectCoverage.State.FAILED, refused.state);
             assertEquals("INCOMPLETE_MEDIA", refused.error);
             assertTrue(library.listChat(INSTAGRAM, ACCOUNT, THREAD).isEmpty());
             assertEquals(0, library.blobs().listBlobs().size());

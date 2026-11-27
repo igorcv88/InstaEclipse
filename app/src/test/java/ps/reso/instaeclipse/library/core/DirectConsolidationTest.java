@@ -180,8 +180,9 @@ public final class DirectConsolidationTest {
             MediaLibrary first = fixture.open();
             new DirectConsolidation(first).offer(INSTAGRAM, ME, THREAD, offers(rows.toArray(new DirectStoreRow[0])), true);
             // Paused after three items.
-            int[] seen = {0};
-            DirectConsolidation.RunReport paused = new DirectConsolidation(first).run(INSTAGRAM, cdn, 50, () -> seen[0]++ >= 3);
+            // The pause is checked between items and on every read; it trips once three are kept.
+            DirectConsolidation.RunReport paused = new DirectConsolidation(first).run(INSTAGRAM, cdn, 50,
+                    () -> first.listAll(false).size() >= 3);
             assertTrue(paused.cancelled);
             assertEquals(3, paused.imported);
             // A fresh process; the fifth object resets mid-run.

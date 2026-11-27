@@ -32,7 +32,7 @@ public final class DirectStoreScanner {
     /** Schema version of {@code X.01ab} in 454.0.0.0.55. Another version is not read. */
     static final int SCHEMA_VERSION = 15;
     private static final int PAGE = 50;
-    private static final int MAX_ROWS_PER_SCAN = 5_000;
+    private static final int MAX_ROWS_PER_SCAN = 100_000;
     private static final ThreadPoolExecutor SCANS = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(2), task -> new Thread(task, "ie-direct-store-scan"));
 
@@ -43,8 +43,11 @@ public final class DirectStoreScanner {
     }
 
     public static final class Result {
+        /** {@code offered} counts parts the module accepted; a refused page stops the scan. */
         public int rows, offered, refusedRows;
         public boolean accepted;
+        /** True when a read limit stopped the scan before the cache was exhausted. */
+        public boolean truncated;
         public String error;
     }
 
@@ -77,6 +80,7 @@ public final class DirectStoreScanner {
                     Result one = scan(app, accountId, thread);
                     total.rows += one.rows;
                     total.offered += one.offered;
+                    total.truncated |= one.truncated;
                     total.refusedRows += one.refusedRows;
                     total.accepted |= one.accepted;
                     if (one.error != null) {
@@ -108,7 +112,11 @@ public final class DirectStoreScanner {
             try (Cursor cursor = db.rawQuery("SELECT DISTINCT thread_id FROM messages WHERE user_id=? "
                     + "AND message_type IN ('media','raven_media','visual_media') AND thread_id IS NOT NULL",
                     new String[] { accountId })) {
-                while (cursor.moveToNext() && threads.size() < 2_000) {
+                while (cursor.moveToNext()) {
+                    if (threads.size() >= 10_000) {
+                        result.truncated = true;
+                        break;
+                    }
                     String thread = cursor.getString(0);
                     if (ImportRequest.validKey(thread)) threads.add(thread);
                 }
@@ -135,6 +143,7 @@ public final class DirectStoreScanner {
                 return result;
             }
             List<String[]> page = new ArrayList<>();
+            java.util.Set<String> seen = new java.util.HashSet<>();
             long afterTs = -1;
             String afterId = "";
             while (result.rows < MAX_ROWS_PER_SCAN) {
@@ -158,20 +167,28 @@ public final class DirectStoreScanner {
                     result.rows++;
                     afterTs = Long.parseLong(raw[2]);
                     afterId = raw[0];
+                    if (!seen.add(raw[0])) continue; // the same message stored twice by the client
                     DirectStoreRow row = DirectStoreRow.parse(accountId, threadId, raw[0], raw[1], afterTs, raw[3]);
                     if (row == null) result.refusedRows++;
                     else rows.add(row);
                 }
-                if (!rows.isEmpty()) {
-                    Boolean accepted = offer(context, accountId, threadId, rows);
+                // IPC pages are capped at MAX_OFFER_PARTS; carousels can exceed it within one DB page.
+                for (List<DirectStoreRow> send : DirectStoreRow.batches(rows,
+                        ps.reso.instaeclipse.library.core.DirectConsolidation.MAX_OFFER_PARTS)) {
+                    Boolean accepted = offer(context, accountId, threadId, send);
                     if (accepted == null) {
                         result.error = "module_unavailable";
                         return result;
                     }
-                    result.accepted |= accepted;
-                    for (DirectStoreRow row : rows) result.offered += row.parts.size();
+                    if (!accepted) {
+                        result.error = "refused_by_module";
+                        return result;
+                    }
+                    result.accepted = true;
+                    for (DirectStoreRow row : send) result.offered += row.parts.size();
                 }
                 if (page.size() < PAGE) break;
+                if (result.rows >= MAX_ROWS_PER_SCAN) result.truncated = true;
             }
         } catch (RuntimeException failure) {
             result.error = failure.getClass().getSimpleName();

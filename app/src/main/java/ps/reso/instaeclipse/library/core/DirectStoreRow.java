@@ -165,4 +165,22 @@ public final class DirectStoreRow {
         if (host.contains("@") || host.contains(":")) return false;
         return host.endsWith(".cdninstagram.com") || host.endsWith(".fbcdn.net");
     }
+
+    /** Splits rows into IPC batches of at most {@code maxParts} parts, never splitting a row. */
+    public static List<List<DirectStoreRow>> batches(List<DirectStoreRow> rows, int maxParts) {
+        List<List<DirectStoreRow>> batches = new ArrayList<>();
+        List<DirectStoreRow> batch = new ArrayList<>();
+        int parts = 0;
+        for (DirectStoreRow row : rows) {
+            if (!batch.isEmpty() && parts + row.parts.size() > maxParts) {
+                batches.add(batch);
+                batch = new ArrayList<>();
+                parts = 0;
+            }
+            batch.add(row);
+            parts += row.parts.size();
+        }
+        if (!batch.isEmpty()) batches.add(batch);
+        return batches;
+    }
 }

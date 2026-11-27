@@ -83,6 +83,12 @@ public final class DirectCoverage {
     public static final class ThreadReport {
         public final String threadKey;
         public int discovered, pending, imported, alreadyPresent, unavailable, refused, ambiguous, failed, viewOnce;
+        /**
+         * Current availability of the copies behind IMPORTED and ALREADY_PRESENT. The state records
+         * what happened; these say what is on disk now. A copy damaged or lost outside the trash is
+         * queued for repair from the same message; one the user trashed is their decision.
+         */
+        public int keptAvailable, keptDamaged, keptTrashed;
         public boolean reachedStart;
         public long oldestTimestamp, newestTimestamp;
         public int pages;
@@ -93,7 +99,9 @@ public final class DirectCoverage {
         public int processed() { return imported + alreadyPresent + unavailable + refused + ambiguous; }
 
         /** Complete only when the client reached the thread's start and nothing waits for a retry. */
-        public boolean complete() { return reachedStart && pending == 0 && failed == 0 && unavailable == 0; }
+        public boolean complete() {
+            return reachedStart && pending == 0 && failed == 0 && unavailable == 0 && keptDamaged == 0;
+        }
     }
 
     public static final class Report {
@@ -300,6 +308,19 @@ public final class DirectCoverage {
                 case AMBIGUOUS -> thread.ambiguous += n;
                 case FAILED -> thread.failed += n;
             }
+        }
+        for (Map<String, Object> row : sql.query("SELECT d.thread_key, "
+                + "SUM(CASE WHEN i.id IS NOT NULL AND i.trashed_at=0 AND b.state='ok' THEN 1 ELSE 0 END) AS ok, "
+                + "SUM(CASE WHEN i.id IS NOT NULL AND i.trashed_at=0 AND (b.state IS NULL OR b.state!='ok') "
+                + "THEN 1 ELSE 0 END) AS damaged, "
+                + "SUM(CASE WHEN i.id IS NULL OR i.trashed_at>0 THEN 1 ELSE 0 END) AS trashed "
+                + "FROM direct_items d LEFT JOIN items i ON i.uuid=d.item_uuid LEFT JOIN blobs b ON b.sha256=i.sha256 "
+                + "WHERE d.account_id=? AND d.state IN ('imported','already_present')"
+                + threadFilter.replace("thread_key", "d.thread_key") + " GROUP BY d.thread_key", args)) {
+            ThreadReport thread = byThread.computeIfAbsent(Sql.Rows.getString(row, "thread_key"), ThreadReport::new);
+            thread.keptAvailable = (int) Sql.Rows.getLong(row, "ok");
+            thread.keptDamaged = (int) Sql.Rows.getLong(row, "damaged");
+            thread.keptTrashed = (int) Sql.Rows.getLong(row, "trashed");
         }
         for (ThreadReport thread : byThread.values()) {
             report.threads.add(thread);

@@ -61,7 +61,7 @@ public final class MediaLibraryRuntime {
                 int purged = library.purgeExpiredTrash();
                 verifyRotation(library);
                 // Resume copies the user already started explicitly; nothing new is scanned here.
-                if (ConversationGalleryProvider.consolidationEnabled(context)) DirectConsolidationWorker.kick(context);
+                if (ConversationGalleryProvider.consolidationEnabled(context)) DirectConsolidationWorker.kick(context, false, false);
                 if (report.stagingRemoved + report.orphanBlobsQuarantined + report.markedMissing
                         + report.markedCorrupt + purged > 0) {
                     Log.i(TAG, "maintenance staging=" + report.stagingRemoved + " orphans=" + report.orphanBlobsQuarantined

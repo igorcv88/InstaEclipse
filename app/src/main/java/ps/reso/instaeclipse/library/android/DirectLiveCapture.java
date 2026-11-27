@@ -277,7 +277,7 @@ public final class DirectLiveCapture {
 
                     String cursor = (String) oldestCursor.get(page);
                     boolean hasCursor = cursor != null && !cursor.isEmpty();
-                    enqueuePage(items, null, account, thread, "native thread page",
+                    enqueuePage(items, account, thread, "native thread page",
                             " has_older=" + moreBefore.getBoolean(page) + " has_cursor=" + hasCursor);
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                     discard("page_observer_" + failure.getClass().getSimpleName());
@@ -294,9 +294,7 @@ public final class DirectLiveCapture {
     private static void installRowBatchFallback(ClassLoader loader) throws ReflectiveOperationException {
         Class<?> generator = Class.forName("X.01CY", false, loader);
         Class<?> controller = Class.forName("X.09WC", false, loader);
-        Class<?> batchEntry = Class.forName("X.0Zcn", false, loader);
         Method getThreadKey = findNoArg(controller, "Ccj", threadKey.getType());
-        Method getModel = findNoArg(batchEntry, "CeD", rowModel.getType());
         Field generatorSession = field(generator, "A00", SESSION);
         for (Method batch : generator.getDeclaredMethods()) {
             Class<?>[] types = batch.getParameterTypes();
@@ -321,7 +319,7 @@ public final class DirectLiveCapture {
                             discard("row_batch_identity_unavailable");
                             return;
                         }
-                        enqueuePage(items, getModel, account, thread, "native row batch", "");
+                        enqueuePage(items, account, thread, "native row batch", "");
                     } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                         discard("row_batch_" + failure.getClass().getSimpleName());
                     }
@@ -333,7 +331,7 @@ public final class DirectLiveCapture {
         throw new NoSuchMethodException("Direct row batch");
     }
 
-    private static void enqueuePage(List<?> items, Method getModel, String account, String thread,
+    private static void enqueuePage(List<?> items, String account, String thread,
                                     String source, String details) {
         if (items.size() > 512) { discard("native_page_too_large"); return; }
         if (pendingPages.incrementAndGet() > 8) {
@@ -344,23 +342,20 @@ public final class DirectLiveCapture {
         boolean posted = false;
         try {
             List<?> snapshot = new ArrayList<>(items);
-            posted = worker.post(() -> captureNativePage(snapshot, getModel, account, thread, source, details));
+            posted = worker.post(() -> captureNativePage(snapshot, account, thread, source, details));
         } finally {
             if (!posted) pendingPages.decrementAndGet();
         }
     }
 
-    private static void captureNativePage(List<?> items, Method getModel, String account, String thread,
+    private static void captureNativePage(List<?> items, String account, String thread,
                                           String source, String details) {
         int resolved = 0;
         try {
             if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
-            for (Object item : items) {
-                if (item == null) continue;
+            for (Object model : items) {
+                if (!rowModel.getType().isInstance(model)) continue;
                 try {
-                    if (getModel != null && !getModel.getDeclaringClass().isInstance(item)) continue;
-                    Object model = getModel == null ? item : getModel.invoke(item);
-                    if (!rowModel.getType().isInstance(model)) continue;
                     String type = modelType(model);
                     if (isMediaType(type) && captureScoped(model, account, thread, type)) resolved++;
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {

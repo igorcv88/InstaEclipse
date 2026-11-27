@@ -1,0 +1,64 @@
+# Inventário estático do Direct no Instagram 454
+
+APK **454.0.0.0.55 / 386005100**. `base.apk` SHA-256 `3419bb746e9f78cfdcca3794621e63fcde7317f81dc3b36ba2fe6b75a992b4c8`, extraído do corpus `Instagram_454.0.0.0.55.tar.gz` (SHA-256 `98f61046fb62a109f0000a30b9ef022839fa2153e77edeb228e6a3802d672657`). O corpus fica fora do Git.
+
+Método: `dexdump` 35.0.0 para localizar definições e chamadas; jadx 1.5.1 com `--single-class` para ler as classes citadas; `aapt2 dump resources` para IDs. Todo o conteúdo deste documento é **evidência estática**. Nada aqui foi observado em aparelho.
+
+Níveis de confiança: **A** = lido no código e coerente entre duas classes; **B** = lido no código, uso em tempo de execução não confirmado; **C** = inferido, depende de aparelho.
+
+## Armazenamento local do Direct
+
+| Fato | Classe | Confiança |
+|---|---|---|
+| Banco `databases/direct.db` (ou `direct_side_panel.db` no modo painel lateral), `SQLiteOpenHelper` versão 15 | `X.01ab` | A |
+| Ao falhar a abertura, o próprio Instagram apaga `direct.db` | `X.01ab.A00` | A |
+| Tabela `messages(_id, user_id, server_item_id, client_item_id, thread_id, recipient_ids, timestamp, message_type, text, message)`, índice `(user_id, thread_id, timestamp DESC)` | `X.0sc5`, migrações `X.0yfA`…`X.0yex` | A |
+| `user_id` = `UserSession.userId`; `server_item_id` = `X.01hK.A0o()`; `thread_id` = `DirectThreadKey.A00`; `timestamp` = `X.01hK.A0J()` em microssegundos; `message_type` = `X.01iJ` (`media`, `raven_media`, `visual_media`…); `message` = JSON do modelo | `X.01gX.A0A` | A |
+| `message` é JSON gerado por `X.01hN`: `item_id`, `item_type`, `user_id` (remetente), `timestamp`, `timestamp_in_micro`, `media`, `raven_media`, `visual_media`, `view_mode` | `X.01hN`, `X.0DEn.A0O` ("Error creating json string") | A |
+| `Media` é serializada por tabela de campos genérica; `image_versions2`, `video_versions`, `candidates`, `carousel_media`, `media_type` existem como nomes de campo | `X.05jz.A0E`, `X.05kd` | B. O aninhamento exato exige um dump de linha real |
+| O banco guarda o subconjunto que o cliente carregou. Não há evidência de histórico completo local | `DirectSQLiteDiskIO` (`num_threads_saved_*`, `inbox_clear_*`) | B |
+| Banco Room `mdcore_messages(message_id, thread_id, timestamp, offline_threading_id, filter_tags, data BLOB)` e `mdcore_message_list_pagination_cursors(thread_id, end_cursor, oldest_timestamp_ms, has_more_messages)` | strings DEX | C. Não usado: arquivo, formato de `data` e uso em 454 não confirmados |
+| Cache de imagens `IgDiskCache` com journal e metadados; cache de vídeo segmentado | strings DEX | C. Não usado: um arquivo de cache não comprova a mensagem e o vídeo não é um MP4 completo |
+
+## Modelo de mensagem
+
+| Fato | Classe | Confiança |
+|---|---|---|
+| `X.01hK extends X.0DKm` é o modelo da mensagem | `X.01hK` | A |
+| `0DKm.A0t` = ID do servidor; `0DKm.A0o` = client context; `A0o()` devolve `A0t` | `X.01hK.A0o` | A |
+| `A0d()` = `new DirectMessageIdentifier(A0V tipo, A0t, A0o)` | `X.01hK.A0d` | A |
+| `0DKm.A0T` = `DirectThreadKey`; `A0V` = tipo `X.01iJ`; `A1D` = remetente; `A1E` = view mode | `X.0DKm` | A |
+| `01hK.A0V` = `Media` convencional; `A0J` = mídia visual (efêmera); `A0X` = `raven_media` | `X.01hK`, `X.01hN` | A |
+| `A1v()` é verdadeiro quando o view mode é `once` ou `replayable` | `X.01hK.A1v` | A |
+| `A0J()` = timestamp do servidor em µs (`0DKm.A0h`, com `A0l` como alternativa) | `X.01hK.A0J` | A |
+| `DirectThreadKey.A00()` formata `thread:` + `A00`, ou `recipients:` + lista | `DirectThreadKey` | A |
+
+O ID usado pelo `CurrentConversation` (`thread:`), o `thread_id` de `direct.db` e o `DirectThreadKey` da ação Salvar são o mesmo campo. O `server_item_id` de `direct.db` e o ID do `DirectMessageIdentifier` vêm do mesmo `A0t`.
+
+## Renderização das linhas de mídia
+
+| Fato | Classe | Confiança |
+|---|---|---|
+| `layout/direct_media_message` = `0x7f0e0431`; `direct_visual_message` = `0x7f0e0506`; `direct_multi_media_message` = `0x7f0e0436`; `direct_visual_thumbnail_message` = `0x7f0e050a` | `aapt2` | A |
+| `X.0ThI` ("MediaContentDefinition") infla `0x7f0e0431` em `B6O`, faz bind em `AWs(X.0TiJ, X.0BYS)` e unbind em `Hjg(X.0TiJ)`. Android Views em RecyclerView | `X.0ThI` | A |
+| ViewHolder `X.0TiJ`: `A08` = `RoundedCornerMediaFrameLayout`, `A03` = `IgProgressImageView` | `X.0ThI.B6O` | A |
+| View model `X.0BYS extends X.0B79`; `Brl()` devolve o `MessageIdentifier` e `BrO()` o tipo | `X.0B79` | A |
+| `0x7f0e0506` é inflado por `X.02vL`; `0x7f0e0436` por `X.03BS`; `0x7f0e050a` por `X.0ThE` | dexdump | B |
+| Rotas Compose para balões de mídia | Não localizadas nesta inspeção. A linha de mídia convencional observada é View | C |
+
+## O que é usado no código
+
+- `DirectStoreScanner` lê `direct.db` em `OPEN_READONLY`, somente quando a versão é 15. Só lê as linhas da conta e da conversa abertas. As linhas `media`, `raven_media` e `visual_media` são consideradas.
+- `DirectStoreRow` confere `item_id` e `item_type` do JSON contra as colunas e exige o remetente. Linhas contraditórias são recusadas e contadas.
+- As mídias de visualização única e com repetição são registradas como descobertas e ficam `UNAVAILABLE` com `view_once_not_fetched`. A URL delas nem é enviada ao módulo.
+- Para mídias convencionais, o módulo faz um GET HTTPS da URL de CDN que o modelo já contém (`*.cdninstagram.com`, `*.fbcdn.net`), sem cookies e sem chamar hosts da API. Isso não altera o estado da mensagem no servidor. É uma requisição de rede adicional e **não** uma leitura do cache de bytes do Instagram.
+- O hook visual por linha (`X.0ThI.AWs` / `Hjg`) está mapeado e **não foi implementado** nesta etapa. A apresentação nos balões continua nativa.
+
+## Pendências que dependem de aparelho
+
+1. Dump de uma linha `media` de teste: `adb shell su -c "sqlite3 /data/data/com.instagram.android/databases/direct.db 'select server_item_id, message_type, substr(message,1,2000) from messages where message_type=\"media\" limit 1'"`. Confirma o aninhamento de `image_versions2.candidates` e `video_versions`.
+2. Contagem por conversa de teste: quantas linhas de mídia existem antes e depois de rolar o histórico. Mede quanto o cache cobre.
+3. Estabilidade de `server_item_id` após force-stop, reinício, refresh, paginação e troca de conta.
+4. Verificação de que a ação Salvar e a linha de `direct.db` da mesma mensagem dão o mesmo ID.
+5. Rede: com proxy ou `logcat`, confirmar que a consolidação só faz requisições a hosts de CDN e nenhuma a `i.instagram.com`.
+6. Visualização única de teste: confirmar que o remetente continua vendo a mídia como não aberta depois de uma consolidação da conversa.

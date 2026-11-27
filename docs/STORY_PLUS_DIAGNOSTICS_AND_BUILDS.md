@@ -38,3 +38,5 @@ Optimizations: Java 17, `gradle/actions/setup-gradle` cache (distribution, depen
 **Important:** The signed APK may not install as an update to an upstream APK signed with a different certificate. The signing secrets guarantee consistent signing across *our own* artifacts and releases, not compatibility with unrelated signing identities.
 
 The PR should stay unmerged until CI is running and the diagnostic build is tested on a real Instagram version.
+
+Para os checks locais e os casos instrumentados da biblioteca do Direct, consulte [Biblioteca de mídias](MEDIA_LIBRARY.md#build-e-atribuição).

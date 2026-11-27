@@ -47,7 +47,7 @@ public final class DirectLiveCapture {
 
     private static Context hostContext;
     private static Field rowModel, rowMetadata, metadataThread, wrappedThreadId, messageType, threadKey, threadId,
-            sessionUser, visualModel;
+            sessionUser, visualModel, feedMedia;
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
     private static Class<?> sessionClass, messageContextClass;
@@ -90,6 +90,7 @@ public final class DirectLiveCapture {
             threadId = field(threadKey.getType(), "A00", String.class.getName());
             sessionUser = field(session, "userId", String.class.getName());
             visualModel = field(model, "A0J", "X.02jG");
+            feedMedia = field(model, "A0V", "com.instagram.feed.media.Media");
             serverId = model.getMethod("A0o");
             timestamp = model.getMethod("A0J");
             if (serverId.getReturnType() != String.class || timestamp.getReturnType() != long.class) {
@@ -422,6 +423,10 @@ public final class DirectLiveCapture {
             // by the original mode it recorded.
             String rewritten = ps.reso.instaeclipse.mods.ghost.GhostPermanentViewHook
                     .originalMode(visualModel.get(model));
+            if (rewritten == null && DirectStoreRow.TYPE_MEDIA.equals(itemType)) {
+                rewritten = ps.reso.instaeclipse.mods.ghost.GhostPermanentViewHook
+                        .originalModeForMedia(feedMedia.get(model));
+            }
             DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
             if (row == null) { discard("parse_refused type=" + type + " item_type=" + itemType); return; }
             // A persisted "permanent" visual model may be an older, already rewritten row.

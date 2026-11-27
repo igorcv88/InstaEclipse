@@ -54,6 +54,48 @@ public class GhostPermanentViewHook {
         return model == null ? null : ORIGINAL_BY_OBJECT.get(model);
     }
 
+    private static final String NATIVE_MEDIA = "com.instagram.feed.media.Media";
+    private static final int ORIGINAL_MEDIA_LIMIT = 4096;
+    private static final java.util.Map<String, String> ORIGINAL_BY_MEDIA_ID =
+            new java.util.LinkedHashMap<>(256, 0.75f, true);
+
+    private static String mediaId(Object media) throws ReflectiveOperationException {
+        if (media == null || !NATIVE_MEDIA.equals(media.getClass().getName())) return null;
+        Object value = media.getClass().getMethod("getId").invoke(media);
+        return value instanceof String id && !id.isEmpty() && id.length() <= 256 ? id : null;
+    }
+
+    private static void rememberMediaMode(Object visual, String mode) {
+        // Instagram 454 embeds the same feed Media in X.02jG.A05 and in a projected
+        // X.01hK media row. Use the exact media ID, not the render badge's numeric hints.
+        if (!"X.02jG".equals(visual.getClass().getName())) return;
+        try {
+            String id = mediaId(visual.getClass().getField("A05").get(visual));
+            if (id == null) return;
+            synchronized (ORIGINAL_BY_MEDIA_ID) {
+                ORIGINAL_BY_MEDIA_ID.put(id, mode);
+                if (ORIGINAL_BY_MEDIA_ID.size() > ORIGINAL_MEDIA_LIMIT) {
+                    ORIGINAL_BY_MEDIA_ID.remove(ORIGINAL_BY_MEDIA_ID.keySet().iterator().next());
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            // The original mode remains available through the visual object's own identity.
+        }
+    }
+
+    /** Classification for a Media projection whose visual wrapper is absent. */
+    public static String originalModeForMedia(Object media) {
+        try {
+            String id = mediaId(media);
+            if (id == null) return null;
+            synchronized (ORIGINAL_BY_MEDIA_ID) {
+                return ORIGINAL_BY_MEDIA_ID.get(id);
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            return null;
+        }
+    }
+
     public void install(DexKitBridge bridge, ClassLoader classLoader) {
         if (DexKitCache.isCacheValid()) {
             Method cached = DexKitCache.loadMethod("ViewOnceMedia", classLoader);
@@ -157,6 +199,7 @@ public class GhostPermanentViewHook {
                             if (original != null) {
                                 for (Long k : keys) ORIGINAL_BY_KEY.put(k, original);
                                 ORIGINAL_BY_OBJECT.put(result, original);
+                                rememberMediaMode(result, original);
                                 ModuleLog.line("(IE|ViewOnceMedia) mode=" + original + " keys=" + keys);
                                 f.set(result, PERMANENT);
                             }

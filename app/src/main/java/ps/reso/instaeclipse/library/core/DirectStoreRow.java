@@ -121,23 +121,20 @@ public final class DirectStoreRow {
         boolean fromMe = accountId.equals(sender);
         long timestampMs = Math.max(0, timestampMicros / 1000L);
 
-        JSONObject media;
-        boolean viewOnce;
+        JSONObject visual = message.optJSONObject(TYPE_VISUAL);
+        String mode = visual != null ? visual.optString("view_mode", message.optString("view_mode", ""))
+                : message.optString("view_mode", "");
+        if (ephemeralMode(rewrittenMode)) mode = rewrittenMode;
+        boolean visualType = !TYPE_MEDIA.equals(messageType);
+        // The host can project a rewritten visual message as item_type=media.
+        boolean viewOnce = ephemeralMode(mode) || (visualType && !"permanent".equals(mode));
+        JSONObject media = visualType ? (visual == null ? null : visual.optJSONObject("media"))
+                : message.optJSONObject(TYPE_MEDIA);
+        if (media == null && visualType) media = message.optJSONObject(TYPE_RAVEN);
+
         boolean seen = false;
-        if (TYPE_MEDIA.equals(messageType)) {
-            media = message.optJSONObject("media");
-            viewOnce = false;
-        } else {
-            JSONObject visual = message.optJSONObject(TYPE_VISUAL);
-            JSONObject raven = message.optJSONObject(TYPE_RAVEN);
-            media = visual != null ? visual.optJSONObject("media") : raven;
-            if (media == null && raven != null) media = raven;
-            String mode = visual != null ? visual.optString("view_mode", message.optString("view_mode", ""))
-                    : message.optString("view_mode", "");
-            if (rewrittenMode != null && !"permanent".equals(rewrittenMode)) mode = rewrittenMode;
-            // Unknown mode on an expiring type is treated as view-once: never fetched automatically.
-            viewOnce = !"permanent".equals(mode);
-            JSONArray seenBy = visual != null ? visual.optJSONArray("seen_user_ids") : null;
+        if (viewOnce && visual != null) {
+            JSONArray seenBy = visual.optJSONArray("seen_user_ids");
             if (seenBy != null) {
                 for (int i = 0; i < seenBy.length(); i++) {
                     if (accountId.equals(seenBy.optString(i, null))) seen = true;
@@ -162,6 +159,10 @@ public final class DirectStoreRow {
         }
         return new DirectStoreRow(accountId, threadId, serverItemId, messageType, sender, viewOnce, seen, timestampMs,
                 Collections.unmodifiableList(parts));
+    }
+
+    private static boolean ephemeralMode(String mode) {
+        return "once".equals(mode) || "replayable".equals(mode) || "allow_replay".equals(mode);
     }
 
     private static Part part(String key, boolean fromMe, boolean viewOnce, boolean openedOrOwn, long timestampMs,

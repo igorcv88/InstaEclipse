@@ -374,4 +374,25 @@ public final class DirectConsolidationTest {
                 row("62003", PEER, "visual_media", visual("permanent", "opened", ME)), "replayable");
         assertTrue(opened.parts.get(0).fetchAllowed);
     }
+    @Test public void conventionalProjectionRespectsKnownOriginalMode() throws Exception {
+        String projection = row("62004", PEER, "media", imageMedia("projection"));
+        DirectStoreRow converted = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1,
+                projection, "replayable");
+        assertTrue(converted.viewOnce);
+        assertNotNull(converted.parts.get(0).best);
+        assertFalse(converted.parts.get(0).fetchAllowed);
+
+        DirectStoreRow conventional = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1, projection);
+        assertFalse(conventional.viewOnce);
+        assertTrue(conventional.parts.get(0).fetchAllowed);
+
+        JSONObject openedProjection = new JSONObject(projection);
+        openedProjection.put("visual_media", visual("permanent", "opened-projection", ME));
+        DirectStoreRow opened = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1,
+                openedProjection.toString(), "replayable");
+        assertTrue(opened.viewOnce);
+        assertTrue(opened.seenByViewer);
+        assertTrue(opened.parts.get(0).fetchAllowed);
+    }
+
 }

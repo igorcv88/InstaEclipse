@@ -7,9 +7,20 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.ThumbnailUtils;
+import android.util.Size;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
 import android.os.SystemClock;
 
+import ps.reso.instaeclipse.library.core.DirectConsolidation;
 import ps.reso.instaeclipse.library.core.ImportRequest;
+import ps.reso.instaeclipse.library.core.LibraryItem;
+import ps.reso.instaeclipse.library.core.MediaLibrary;
 import ps.reso.instaeclipse.utils.core.IpcSecurity;
 
 /** Issues only scoped launch capabilities. No catalogue or media bytes cross IPC. */
@@ -23,6 +34,11 @@ public final class ConversationGalleryProvider extends ContentProvider {
     public static final String PACKAGE = "library_package";
     public static final String ENABLED = "directMediaLibrary";
     /** Separate, off by default: consolidation of conventional Direct media from Instagram's cache. */
+    static final String INLINE_METHOD = "inline_preview";
+    static final String INLINE_BYTES = "preview";
+    private static final int PREVIEW_SIZE = 256;
+    private static final int MAX_PREVIEW_BYTES = 128 * 1024;
+
     public static final String CONSOLIDATION = "directMediaConsolidation";
 
     public static boolean enabled(Context context) {
@@ -42,17 +58,72 @@ public final class ConversationGalleryProvider extends ContentProvider {
         String caller = IpcSecurity.supportedCallerPackage(context, Binder.getCallingUid());
         if (caller == null) throw new SecurityException("Unsupported media library caller");
         if (DirectOfferContract.METHOD.equals(method)) return offer(context, caller, extras);
-        if (!"gallery".equals(method) || extras == null || !enabled(context)) return null;
+        boolean preview = INLINE_METHOD.equals(method);
+        if ((!preview && !"gallery".equals(method)) || extras == null || !enabled(context)) return null;
         String account = extras.getString(ACCOUNT);
         String thread = extras.getString(THREAD);
         if (!ImportRequest.validKey(account) || !ImportRequest.validKey(thread)) return null;
         String message = extras.getString(MESSAGE);
         boolean fromMe = extras.getBoolean(FROM_ME);
         if (message == null ? fromMe : !ImportRequest.validKey(message)) return null;
+        if (preview) {
+            if (message == null) return null;
+            return preview(context, ImportRequest.forMessage(caller, account, thread, message, fromMe));
+        }
         Bundle result = new Bundle();
         result.putString(TOKEN, GalleryAccess.issue(new GalleryAccess.Grant(caller, account, thread, message,
                 fromMe, SystemClock.elapsedRealtime())));
         return result;
+    }
+
+    /** A bounded preview only. The source file and original bytes stay in the companion. */
+    private static Bundle preview(Context context, ImportRequest scope) {
+        try {
+            MediaLibrary library = MediaLibraryRuntime.get(context);
+            LibraryItem copy = library.inlineCopy(scope);
+            if (copy == null) {
+                DirectTrace.event(scope.accountKey, scope.threadKey, scope.messageKey,
+                        "inline_lookup", "result=no_eligible_copy from_me=" + scope.fromMe);
+                return null;
+            }
+            Bitmap thumbnail = thumbnail(library.fileOf(copy), "video".equals(copy.mediaKind));
+            if (thumbnail == null) return null;
+            try {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                if (!thumbnail.compress(Bitmap.CompressFormat.JPEG, 85, bytes)
+                        || bytes.size() > MAX_PREVIEW_BYTES) return null;
+                Bundle result = new Bundle();
+                result.putByteArray(INLINE_BYTES, bytes.toByteArray());
+                DirectTrace.event(scope.accountKey, scope.threadKey, scope.messageKey, "inline_lookup",
+                        "result=preview from_me=" + scope.fromMe);
+                return result;
+            } finally {
+                thumbnail.recycle();
+            }
+        } catch (IOException | RuntimeException failure) {
+            DirectTrace.event(scope.accountKey, scope.threadKey, scope.messageKey,
+                    "inline_lookup", "result=" + failure.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    private static Bitmap thumbnail(File file, boolean video) throws IOException {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            Size size = new Size(PREVIEW_SIZE, PREVIEW_SIZE);
+            return video ? ThumbnailUtils.createVideoThumbnail(file, size, null)
+                    : ThumbnailUtils.createImageThumbnail(file, size, null);
+        }
+        if (video) return ThumbnailUtils.createVideoThumbnail(file.getPath(),
+                android.provider.MediaStore.Video.Thumbnails.MINI_KIND);
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(file.getPath(), bounds);
+        bounds.inJustDecodeBounds = false;
+        bounds.inSampleSize = 1;
+        while (Math.max(bounds.outWidth, bounds.outHeight) / bounds.inSampleSize > PREVIEW_SIZE * 2) {
+            bounds.inSampleSize *= 2;
+        }
+        return BitmapFactory.decodeFile(file.getPath(), bounds);
     }
 
     /** Records one page of the scanner's offers and starts the worker. No bytes cross IPC. */
@@ -68,14 +139,25 @@ public final class ConversationGalleryProvider extends ContentProvider {
                         extras.getStringArrayList(DirectOfferContract.FLAGS),
                         extras.getLongArray(DirectOfferContract.TIMESTAMPS));
         if (offers == null) return reply;
+        boolean explicit = extras.getBoolean(DirectOfferContract.EXPLICIT, false);
+        String account = extras.getString(ACCOUNT);
+        String thread = extras.getString(THREAD);
         try {
-            new ps.reso.instaeclipse.library.core.DirectConsolidation(MediaLibraryRuntime.get(context))
-                    .offer(caller, extras.getString(ACCOUNT), extras.getString(THREAD), offers, false);
+            DirectConsolidation consolidation = new DirectConsolidation(MediaLibraryRuntime.get(context), DirectTrace.PROGRESS);
+            if (explicit || DirectTrace.enabled()) {
+                DirectConsolidation.OfferReport report = consolidation.offerWithReport(caller, account, thread, offers);
+                reply.putInt(DirectOfferContract.DISCOVERED, report.discovered);
+                reply.putInt(DirectOfferContract.QUEUED, report.queued);
+                reply.putInt(DirectOfferContract.ALREADY_STORED, report.alreadyStored);
+                reply.putInt(DirectOfferContract.SKIPPED, report.skipped);
+            } else {
+                consolidation.offer(caller, account, thread, offers, false);
+            }
         } catch (java.io.IOException | RuntimeException failure) {
             return reply;
         }
         // Only a scan the user started clears a pause; automatic capture respects it.
-        DirectConsolidationWorker.kick(context, extras.getBoolean(DirectOfferContract.EXPLICIT, false), false);
+        DirectConsolidationWorker.kick(context, explicit, false);
         reply.putBoolean(DirectOfferContract.ACCEPTED, true);
         return reply;
     }

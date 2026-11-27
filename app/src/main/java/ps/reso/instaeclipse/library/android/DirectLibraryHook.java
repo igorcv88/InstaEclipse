@@ -62,6 +62,12 @@ public final class DirectLibraryHook {
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             ModuleLog.line("(IE|MediaLibrary) shared media unavailable: " + mismatch);
         }
+        try {
+            DirectInlinePreview.install(loader);
+            ModuleLog.line("(IE|MediaLibrary) 454 conventional inline preview installed");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+            ModuleLog.line("(IE|MediaLibrary) inline preview unavailable: " + mismatch.getClass().getSimpleName());
+        }
         DirectLiveCapture.install(context, loader);
     }
 
@@ -78,7 +84,8 @@ public final class DirectLibraryHook {
         Method action = null;
         for (Method candidate : hostClass(loader, "X.0QtM").getDeclaredMethods()) {
             Class<?>[] types = candidate.getParameterTypes();
-            if ("A08".equals(candidate.getName()) && Modifier.isStatic(candidate.getModifiers())
+            // 454: an instance method (PUBLIC FINAL), not static; argument positions are the same.
+            if ("A08".equals(candidate.getName())
                     && candidate.getReturnType() == void.class && types.length > 38
                     && types[0] == Activity.class && types[1] == View.class
                     && SESSION.equals(types[2].getName()) && "X.0OHZ".equals(types[34].getName())
@@ -111,6 +118,8 @@ public final class DirectLibraryHook {
                             (String) serverId.get(nativeId), (String) serverId.get(callback),
                             enumName(kind.get(nativeId)), enumName(kind.get(callback)));
                     if (selection == null) return;
+                    DirectTrace.event(selection.accountKey, selection.threadKey, selection.messageKey,
+                            "save_selection", "result=matched from_me=" + selection.fromMe);
                     IeDialog prompt = new IeDialog(activity).title(I18n.t(activity, R.string.media_library_message_title))
                             .message(I18n.t(activity, R.string.media_library_message_offer));
                     prompt.primary(I18n.t(activity, R.string.media_library_title),
@@ -206,7 +215,7 @@ public final class DirectLibraryHook {
     }
 
     // These DEX names may start with a digit, which source-level reflection analysis cannot parse.
-    private static Class<?> hostClass(ClassLoader loader, String binaryName) throws ClassNotFoundException {
+    static Class<?> hostClass(ClassLoader loader, String binaryName) throws ClassNotFoundException {
         return Class.forName(binaryName, false, loader);
     }
 

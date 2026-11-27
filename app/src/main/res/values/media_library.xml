@@ -73,11 +73,11 @@
     <string name="media_library_consolidate_thread_body">InstaEclipse already keeps the photos and videos of a chat as Instagram shows them. This also reads the few items Instagram keeps on this device for this chat. View-once and replayable media are kept only after you open them in Instagram, or when they are yours.</string>
     <string name="media_library_consolidate_account_body">Reads the few media items Instagram keeps on this device for every chat of this account. Instagram 454 does not keep the chat history on the device: media are kept as you open and scroll your chats. View-once and replayable media are kept only after you open them, or when they are yours.</string>
     <string name="media_library_consolidate_start">Start</string>
-    <string name="media_library_consolidate_queued">%1$d items sent to the library from %2$d cached messages (%3$d not readable). Copies continue in the background.</string>
+    <string name="media_library_consolidate_queued">Local cache: %1$d parts offered, %6$d newly discovered, %7$d with eligible source. %2$d eligible for processing, %3$d already stored, %4$d ineligible. %5$d unreadable rows. Transfers are reported separately.</string>
     <string name="media_library_consolidate_failed">Could not read Instagram\'s local cache (%1$s).</string>
     <string name="media_library_consolidate_busy">A scan is already running.</string>
     <string name="media_library_coverage_title">Direct coverage</string>
-    <string name="media_library_coverage_body">Chats: %1$d (%2$d complete)\nDiscovered: %3$d\nKept and available now: %4$d\nDamaged or missing (repaired on the next scan): %10$d · In the trash: %11$d\nUnavailable now: %5$d (view-once never fetched: %6$d)\nRefused: %7$d · Ambiguous: %8$d\nWaiting or failed: %9$d\n\nOnly what Instagram already loaded on this device is covered. A chat counts as complete only when its start was reached and nothing is waiting.</string>
+    <string name="media_library_coverage_body">Chats: %1$d (%2$d complete)\nDiscovered: %3$d\nKept and available now: %4$d\nDamaged or missing (repaired on the next scan): %10$d · In the trash: %11$d\nUnavailable now: %5$d (view-once observed: %6$d)\nRefused: %7$d · Ambiguous: %8$d\nPending: %9$d · Failed: %12$d\n\nOnly what Instagram already loaded on this device is covered. A chat counts as complete only when its start was reached and nothing is waiting.</string>
     <string name="media_library_coverage_run">Continue copies</string>
     <string name="media_library_coverage_pause">Pause</string>
     <string name="media_library_coverage_action">Direct coverage</string>

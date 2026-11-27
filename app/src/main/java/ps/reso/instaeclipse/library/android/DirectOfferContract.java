@@ -9,6 +9,10 @@ final class DirectOfferContract {
     /** Three characters per part: from-me, view-once, fetch allowed ("0"/"1"). */
     static final String FLAGS = "offer_flags";
     static final String TIMESTAMPS = "offer_timestamps";
+    static final String DISCOVERED = "discovered";
+    static final String QUEUED = "offer_queued";
+    static final String ALREADY_STORED = "offer_already_stored";
+    static final String SKIPPED = "offer_skipped";
     static final String ACCEPTED = "offer_accepted";
     /** True only for a scan the user started; automatic capture never clears a pause. */
     static final String EXPLICIT = "offer_explicit";

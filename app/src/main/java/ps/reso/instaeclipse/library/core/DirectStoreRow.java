@@ -43,21 +43,28 @@ public final class DirectStoreRow {
         /** The single best candidate the client holds, or null when none is usable. */
         public final Candidate best;
         /**
-         * Whether the module may fetch {@link #best}. Conventional and permanent items always;
-         * view-once and replayable items only when they are the account's own or the account is
-         * already in {@code seen_user_ids} (the user opened it in Instagram). Fetching then
-         * consumes nothing. Owner decision 2026-11-27.
+         * Whether the module may fetch {@link #best}: whenever the client's model holds a usable CDN
+         * URL, for every mode. Owner decision 2026-11-27 (final goal): view-once and replayable
+         * media are kept as permanent copies in the library, marked with their original mode; the
+         * fetch is a CDN GET and calls no Instagram API.
          */
         public final boolean fetchAllowed;
+        /** Why {@link #best} is null: no_media, no_versions, no_url or host=&lt;non-CDN host&gt;. Null when present. */
+        public final String sourceGap;
 
         Part(DirectCoverage.Discovered identity, Candidate best) {
-            this(identity, best, !identity.viewOnce);
+            this(identity, best, true, best == null ? "no_media" : null);
         }
 
         Part(DirectCoverage.Discovered identity, Candidate best, boolean fetchAllowed) {
+            this(identity, best, fetchAllowed, best == null ? "no_url" : null);
+        }
+
+        Part(DirectCoverage.Discovered identity, Candidate best, boolean fetchAllowed, String sourceGap) {
             this.fetchAllowed = fetchAllowed && best != null;
             this.identity = identity;
             this.best = best;
+            this.sourceGap = best == null ? (sourceGap == null ? "no_url" : sourceGap) : null;
         }
     }
 
@@ -81,6 +88,30 @@ public final class DirectStoreRow {
         this.parts = parts;
     }
 
+    /** Merge only two observations from the same message and direction. */
+    public DirectStoreRow mergeObservation(DirectStoreRow latest) {
+        if (!accountId.equals(latest.accountId) || !threadId.equals(latest.threadId)
+                || !itemId.equals(latest.itemId) || !senderId.equals(latest.senderId)) return this;
+        if (viewOnce != latest.viewOnce) return viewOnce ? this : latest;
+        // A source-less parent placeholder cannot describe which slides exist.
+        boolean previousSlides = parts.stream().anyMatch(part -> !itemId.equals(part.identity.messageKey));
+        boolean latestSlides = latest.parts.stream().anyMatch(part -> !itemId.equals(part.identity.messageKey));
+        if (previousSlides != latestSlides) return previousSlides ? this : latest;
+        java.util.Map<String, Part> partsByKey = new java.util.LinkedHashMap<>();
+        for (Part part : parts) partsByKey.put(part.identity.messageKey, part);
+        for (Part part : latest.parts) {
+            Part previous = partsByKey.get(part.identity.messageKey);
+            if (previous == null || part.fetchAllowed || !previous.fetchAllowed) {
+                partsByKey.put(part.identity.messageKey, part);
+            }
+        }
+        List<Part> merged = new ArrayList<>(partsByKey.values());
+        if (merged.equals(latest.parts)) return latest;
+        if (merged.equals(parts)) return this;
+        return new DirectStoreRow(accountId, threadId, itemId, latest.messageType, senderId,
+                viewOnce, seenByViewer || latest.seenByViewer, latest.timestampMs, Collections.unmodifiableList(merged));
+    }
+
     public static boolean isMediaType(String type) {
         return TYPE_MEDIA.equals(type) || TYPE_RAVEN.equals(type) || TYPE_VISUAL.equals(type);
     }
@@ -99,8 +130,8 @@ public final class DirectStoreRow {
     /**
      * @param rewrittenMode the original view mode when InstaEclipse's own "Unlimited View Once"
      *                      option rewrote it to "permanent" in Instagram's model; null otherwise.
-     *                      The item is then classified by its real mode. Because Instagram already
-     *                      shows it as permanent media, fetching it consumes nothing and is allowed.
+     *                      The item is classified by its original mode. A rewrite does not establish
+     *                      ownership or that the recipient has opened it.
      */
     public static DirectStoreRow parse(String accountId, String threadId, String serverItemId, String messageType,
                                        long timestampMicros, String json, String rewrittenMode) {
@@ -121,23 +152,20 @@ public final class DirectStoreRow {
         boolean fromMe = accountId.equals(sender);
         long timestampMs = Math.max(0, timestampMicros / 1000L);
 
-        JSONObject media;
-        boolean viewOnce;
+        JSONObject visual = message.optJSONObject(TYPE_VISUAL);
+        String mode = visual != null ? visual.optString("view_mode", message.optString("view_mode", ""))
+                : message.optString("view_mode", "");
+        if (ephemeralMode(rewrittenMode)) mode = rewrittenMode;
+        boolean visualType = !TYPE_MEDIA.equals(messageType);
+        // The host can project a rewritten visual message as item_type=media.
+        boolean viewOnce = ephemeralMode(mode) || (visualType && !"permanent".equals(mode));
+        JSONObject media = visualType ? (visual == null ? null : visual.optJSONObject("media"))
+                : message.optJSONObject(TYPE_MEDIA);
+        if (media == null && visualType) media = message.optJSONObject(TYPE_RAVEN);
+
         boolean seen = false;
-        if (TYPE_MEDIA.equals(messageType)) {
-            media = message.optJSONObject("media");
-            viewOnce = false;
-        } else {
-            JSONObject visual = message.optJSONObject(TYPE_VISUAL);
-            JSONObject raven = message.optJSONObject(TYPE_RAVEN);
-            media = visual != null ? visual.optJSONObject("media") : raven;
-            if (media == null && raven != null) media = raven;
-            String mode = visual != null ? visual.optString("view_mode", message.optString("view_mode", ""))
-                    : message.optString("view_mode", "");
-            if (rewrittenMode != null && !"permanent".equals(rewrittenMode)) mode = rewrittenMode;
-            // Unknown mode on an expiring type is treated as view-once: never fetched automatically.
-            viewOnce = !"permanent".equals(mode);
-            JSONArray seenBy = visual != null ? visual.optJSONArray("seen_user_ids") : null;
+        if (viewOnce && visual != null) {
+            JSONArray seenBy = visual.optJSONArray("seen_user_ids");
             if (seenBy != null) {
                 for (int i = 0; i < seenBy.length(); i++) {
                     if (accountId.equals(seenBy.optString(i, null))) seen = true;
@@ -151,17 +179,21 @@ public final class DirectStoreRow {
                 for (int i = 0; i < carousel.length() && i < 20; i++) {
                     JSONObject slide = carousel.optJSONObject(i);
                     if (slide == null) continue;
-                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen || rewrittenMode != null,
+                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen,
                             timestampMs, slide));
                 }
             } else {
-                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen || rewrittenMode != null, timestampMs, media));
+                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen, timestampMs, media));
             }
         } else {
             parts.add(new Part(new DirectCoverage.Discovered(serverItemId, fromMe, "unknown", viewOnce, timestampMs), null));
         }
         return new DirectStoreRow(accountId, threadId, serverItemId, messageType, sender, viewOnce, seen, timestampMs,
                 Collections.unmodifiableList(parts));
+    }
+
+    private static boolean ephemeralMode(String mode) {
+        return "once".equals(mode) || "replayable".equals(mode) || "allow_replay".equals(mode);
     }
 
     private static Part part(String key, boolean fromMe, boolean viewOnce, boolean openedOrOwn, long timestampMs,
@@ -173,8 +205,31 @@ public final class DirectStoreRow {
         boolean isVideo = type == 2 || (type == 0 && video != null);
         Candidate chosen = isVideo ? video : image;
         String kind = chosen == null ? "unknown" : (isVideo ? MediaSniffer.KIND_VIDEO : MediaSniffer.KIND_IMAGE);
+        String gap = null;
+        if (chosen == null) {
+            JSONArray candidates = versions == null ? null : versions.optJSONArray("candidates");
+            JSONArray videos = media.optJSONArray("video_versions");
+            String host = firstHost(isVideo ? videos : candidates);
+            gap = (isVideo ? videos == null : candidates == null) ? "no_versions"
+                    : host != null ? "host=" + host : "no_url";
+        }
         return new Part(new DirectCoverage.Discovered(key, fromMe, kind, viewOnce, timestampMs), chosen,
-                !viewOnce || openedOrOwn);
+                true, gap);
+    }
+
+    /** Host of the first URL in a version list (diagnostics only; never the full URL). */
+    static String firstHost(JSONArray versions) {
+        if (versions == null) return null;
+        for (int i = 0; i < versions.length(); i++) {
+            JSONObject version = versions.optJSONObject(i);
+            String url = version == null ? null : version.optString("url", null);
+            if (url == null || !url.contains("://")) continue;
+            int start = url.indexOf("://") + 3;
+            int end = url.indexOf('/', start);
+            String host = end < 0 ? url.substring(start) : url.substring(start, end);
+            return host.replaceAll("[^A-Za-z0-9.-]", "").toLowerCase(java.util.Locale.ROOT);
+        }
+        return null;
     }
 
     /** Largest candidate by pixel count with an https URL on an Instagram or Facebook CDN. */

@@ -135,23 +135,38 @@ public final class MediaLibrary {
 
     /** Only called from the explicit import flow. Hash the bytes before deciding idempotency. */
     public ImportResult importMedia(ImportRequest request, StreamSource source) throws IOException {
+        return importMedia(request, source, DirectProgress.NONE);
+    }
+
+    ImportResult importMedia(ImportRequest request, StreamSource source, DirectProgress progress) throws IOException {
         request.validate();
         BlobStore.Staged staged = null;
         try {
             try (InputStream input = source.open()) {
                 staged = blobs.stage(input, MAX_ITEM_BYTES);
             }
+            progress.event(request.accountKey, request.threadKey, request.messageKey, "transfer_complete",
+                    "bytes=" + staged.size);
             String kind = MediaSniffer.kindOf(staged.sniffedMime);
             if (kind == null) {
                 throw new LibraryException(LibraryException.Code.UNSUPPORTED_MEDIA, "Only photos and videos can be kept");
             }
             requireComplete(staged.file, staged.sniffedMime);
+            progress.event(request.accountKey, request.threadKey, request.messageKey, "validated", "kind=" + kind);
             try (LibraryLock.Held ignored = lock.acquire(LOCK_TIMEOUT_MS)) {
                 long accountId = ensureAccount(request.packageName, request.accountKey);
                 LibraryItem existing = findCopy(accountId, request.threadKey, request.messageKey,
                         request.fromMe, staged.sha256);
                 if (existing != null && existing.isAvailable()
                         && blobs.verify(existing.sha256, existing.sizeBytes)) {
+                    if (explicitlyConfirmed(request, existing)) {
+                        sql.inTransaction(() -> {
+                            sql.update("UPDATE items SET origin='normal' WHERE id=?", existing.id);
+                            bumpGeneration();
+                            return null;
+                        });
+                        return new ImportResult(ImportStatus.ALREADY_PRESENT, get(existing.uuid));
+                    }
                     return new ImportResult(ImportStatus.ALREADY_PRESENT, existing);
                 }
                 return storeStaged(accountId, request, request.origin, staged, existing);
@@ -159,6 +174,11 @@ public final class MediaLibrary {
         } finally {
             if (staged != null) staged.discard();
         }
+    }
+
+    private static boolean explicitlyConfirmed(ImportRequest request, LibraryItem existing) {
+        return request.messageKey != null && "normal".equals(request.origin) && !request.viewOnce
+                && !existing.viewOnce && "captured".equals(existing.origin);
     }
 
     private ImportResult storeStaged(long accountId, ImportRequest request, String origin, BlobStore.Staged staged,
@@ -181,8 +201,9 @@ public final class MediaLibrary {
                 upsertBlob(staged.sha256, staged.size, mime, now);
                 bumpGeneration();
                 if (existing != null) {
-                    sql.update("UPDATE items SET sha256 = ?, mime_type = ?, media_kind = ? WHERE id = ?",
-                            staged.sha256, mime, kind, existing.id);
+                    String updatedOrigin = explicitlyConfirmed(request, existing) ? "normal" : existing.origin;
+                    sql.update("UPDATE items SET sha256 = ?, mime_type = ?, media_kind = ?, origin = ? WHERE id = ?",
+                            staged.sha256, mime, kind, updatedOrigin, existing.id);
                     return existing.uuid;
                 }
                 String id = UUID.randomUUID().toString();
@@ -227,6 +248,59 @@ public final class MediaLibrary {
                         + "WHERE i.account_id=? AND i.thread_key=? AND i.message_key=? AND i.from_me=? "
                         + "AND i.trashed_at=0 LIMIT 2", account, threadKey, messageKey, fromMe ? 1 : 0);
         return rows.size() == 1 ? new LibraryItem(rows.get(0)) : null;
+    }
+
+    /**
+     * The one available copy kept for exactly this message (account, thread, message id,
+     * direction), whatever its origin or mode: captured view-once and replayable copies included
+     * (owner decision 2026-11-27, final goal). Two different copies for the identity give none.
+     */
+    public LibraryItem inlineCopy(ImportRequest scope) {
+        LibraryItem copy = lookup(scope.packageName, scope.accountKey, scope.threadKey,
+                scope.messageKey, scope.fromMe);
+        if (copy == null || !copy.isAvailable()) return null;
+        return copy;
+    }
+
+    /**
+     * Resolves the existing carousel keys under the exact parent. Conflicting copies hide only
+     * their own part. A part key itself is never treated as a parent.
+     */
+    public List<LibraryItem> listMessage(ImportRequest scope) {
+        if (scope.messageKey == null) return java.util.Collections.emptyList();
+        Long account = findAccount(scope.packageName, scope.accountKey);
+        if (account == null) return java.util.Collections.emptyList();
+        String parent = scope.messageKey;
+        String prefix = parent + ":";
+        List<Object> args = new ArrayList<>();
+        args.add(account);
+        args.add(scope.threadKey);
+        args.add(scope.fromMe ? 1 : 0);
+        args.add(parent);
+        StringBuilder filter = new StringBuilder("i.message_key=?");
+        if (parent.indexOf(':') < 0) {
+            filter.append(" OR (i.origin='captured' AND i.message_key IN (");
+            for (int index = 0; index < 20; index++) {
+                if (index > 0) filter.append(',');
+                filter.append('?');
+                args.add(prefix + index);
+            }
+            filter.append("))");
+        }
+        java.util.SortedMap<Integer, LibraryItem> copies = new java.util.TreeMap<>();
+        java.util.Set<Integer> conflicts = new java.util.HashSet<>();
+        for (Map<String, Object> row : sql.query("SELECT " + ITEM_COLUMNS + ITEM_FROM
+                + "WHERE i.account_id=? AND i.thread_key=? AND i.from_me=? AND i.trashed_at=0 AND ("
+                + filter + ")", args.toArray())) {
+            LibraryItem item = new LibraryItem(row);
+            int index = parent.equals(item.messageKey) ? -1
+                    : Integer.parseInt(item.messageKey.substring(prefix.length()));
+            if (copies.putIfAbsent(index, item) != null) conflicts.add(index);
+        }
+        conflicts.forEach(copies::remove);
+        List<LibraryItem> available = new ArrayList<>();
+        for (LibraryItem copy : copies.values()) if (copy.isAvailable()) available.add(copy);
+        return available;
     }
 
     public List<LibraryItem> listChat(String packageName, String accountKey, String threadKey) {

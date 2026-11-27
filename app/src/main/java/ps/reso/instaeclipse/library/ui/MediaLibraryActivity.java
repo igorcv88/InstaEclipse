@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import ps.reso.instaeclipse.R;
 import ps.reso.instaeclipse.library.android.ConversationGalleryProvider;
+import ps.reso.instaeclipse.library.android.DirectGalleryLauncher;
 import ps.reso.instaeclipse.library.android.GallerySaver;
 import ps.reso.instaeclipse.library.android.ExportFolder;
 import ps.reso.instaeclipse.library.core.BatchCoverage;
@@ -120,9 +121,19 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
         root.addView(recycler, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
 
+        boolean openCopy = scope.messageKey != null
+                && getIntent().getBooleanExtra(DirectGalleryLauncher.OPEN_COPY, false);
         work(() -> {
             library = MediaLibraryRuntime.get(getApplicationContext());
+            // A tap on the message itself opens its own copy; without one the scoped grid stays.
+            LibraryItem copy = openCopy && state == null ? library.inlineCopy(scope) : null;
             post(() -> {
+                if (copy != null) {
+                    getIntent().removeExtra(DirectGalleryLauncher.OPEN_COPY);
+                    openItems(java.util.Collections.singletonList(copy.uuid), 0);
+                    finish();
+                    return;
+                }
                 grid = new LibraryGridAdapter(library, this);
                 recycler.setAdapter(grid);
             });
@@ -559,7 +570,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
             }
             String body = getString(R.string.media_library_coverage_body, report.threads.size(), report.threadsComplete,
                     report.discovered, kept, report.unavailable, viewOnce, refused, ambiguous,
-                    report.pending + report.failed, damaged, trashedCopies);
+                    report.pending, damaged, trashedCopies, report.failed);
             post(() -> {
                 boolean running = ps.reso.instaeclipse.library.android.DirectConsolidationWorker.isRunning();
                 new AlertDialog.Builder(this).setTitle(R.string.media_library_coverage_title).setMessage(body)
@@ -626,10 +637,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
     private List<LibraryItem> visibleItems() {
         if (library == null) return java.util.Collections.emptyList();
         if (scope.messageKey != null) {
-            LibraryItem copy = library.lookup(scope.packageName, scope.accountKey, scope.threadKey,
-                    scope.messageKey, scope.fromMe);
-            return copy == null || !copy.isAvailable() ? java.util.Collections.emptyList()
-                    : java.util.Collections.singletonList(copy);
+            return library.listMessage(scope);
         }
         return scoped() ? library.listChat(scope.packageName, scope.accountKey, scope.threadKey)
                 : library.listAll(trash);

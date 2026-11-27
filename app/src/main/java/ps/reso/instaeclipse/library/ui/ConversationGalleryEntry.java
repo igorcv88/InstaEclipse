@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 
 import ps.reso.instaeclipse.library.android.ConversationGalleryProvider;
+import ps.reso.instaeclipse.library.android.DirectGalleryLauncher;
 import ps.reso.instaeclipse.library.android.GalleryAccess;
 
 /** Public trampoline. Only a fresh, one-use capability can launch the private gallery. */
@@ -20,7 +21,9 @@ public final class ConversationGalleryEntry extends Activity {
                     .putExtra(ConversationGalleryProvider.ACCOUNT, grant.accountKey)
                     .putExtra(ConversationGalleryProvider.THREAD, grant.threadKey)
                     .putExtra(ConversationGalleryProvider.MESSAGE, grant.messageKey)
-                    .putExtra(ConversationGalleryProvider.FROM_ME, grant.fromMe));
+                    .putExtra(ConversationGalleryProvider.FROM_ME, grant.fromMe)
+                    .putExtra(DirectGalleryLauncher.OPEN_COPY, grant.messageKey != null
+                            && getIntent().getBooleanExtra(DirectGalleryLauncher.OPEN_COPY, false)));
         }
         finish();
     }

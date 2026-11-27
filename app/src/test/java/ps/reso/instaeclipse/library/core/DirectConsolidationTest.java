@@ -112,7 +112,7 @@ public final class DirectConsolidationTest {
         assertFalse(DirectStoreRow.isCdnUrl(null));
     }
 
-    @Test public void viewOnceItemsAreRecordedButNeverFetched() throws Exception {
+    @Test public void viewOnceAndReplayableItemsAreKeptWithTheirMode() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             MediaLibrary library = fixture.open();
             DirectConsolidation consolidation = new DirectConsolidation(library);
@@ -129,18 +129,32 @@ public final class DirectConsolidationTest {
             cdn.objects.put(cdn("replay"), jpeg(2));
             cdn.objects.put(cdn("unknown"), jpeg(3));
             DirectConsolidation.RunReport report = consolidation.run(INSTAGRAM, cdn, 50, () -> false);
-            assertEquals(0, report.attempted);
-            assertTrue(cdn.requested.isEmpty());
-            assertTrue(library.listAll(false).isEmpty());
-            DirectCoverage.Report coverage = consolidation.coverage().report(INSTAGRAM, ME, null);
-            assertEquals(3, coverage.unavailable);
-            assertEquals(3, coverage.threads.get(0).viewOnce);
-            Long account = library.findAccount(INSTAGRAM, ME);
-            assertTrue(library.sql().query("SELECT 1 FROM direct_items WHERE account_id=? AND source_url IS NOT NULL",
-                    account).isEmpty());
-            assertEquals(3, library.sql().query("SELECT 1 FROM direct_items WHERE last_error=?",
-                    DirectConsolidation.VIEW_ONCE_NOT_FETCHED).size());
+            assertEquals(3, report.imported);
+            assertEquals(3, library.listAll(false).size());
+            for (String id : new String[] {"30001", "30002", "30003"}) {
+                LibraryItem kept = library.lookup(INSTAGRAM, ME, THREAD, id, false);
+                assertTrue(kept.viewOnce);
+                assertEquals("captured", kept.origin);
+            }
+            assertEquals(3, consolidation.coverage().report(INSTAGRAM, ME, null).threads.get(0).viewOnce);
         }
+    }
+
+    @Test public void aViewOnceWithoutAnyUrlIsRecordedWithTheGap() throws Exception {
+        DirectStoreRow noMedia = DirectStoreRow.parse(ME, THREAD, "30010", "visual_media", 1,
+                row("30010", PEER, "visual_media", new JSONObject().put("view_mode", "once")));
+        assertNull(noMedia.parts.get(0).best);
+        assertFalse(noMedia.parts.get(0).fetchAllowed);
+        assertEquals("no_media", noMedia.parts.get(0).sourceGap);
+        DirectStoreRow noVersions = DirectStoreRow.parse(ME, THREAD, "30011", "visual_media", 1,
+                row("30011", PEER, "visual_media", new JSONObject().put("view_mode", "once")
+                        .put("media", new JSONObject().put("media_type", 1))));
+        assertEquals("no_versions", noVersions.parts.get(0).sourceGap);
+        JSONObject foreign = new JSONObject().put("media_type", 1).put("image_versions2", new JSONObject()
+                .put("candidates", new JSONArray().put(new JSONObject().put("url", "https://lookaside.example.net/x?sig=secret"))));
+        DirectStoreRow foreignHost = DirectStoreRow.parse(ME, THREAD, "30012", "visual_media", 1,
+                row("30012", PEER, "visual_media", new JSONObject().put("view_mode", "once").put("media", foreign)));
+        assertEquals("host=lookaside.example.net", foreignHost.parts.get(0).sourceGap);
     }
 
     @Test public void conventionalItemsAreFetchedOnceAndReofferingIsIdempotent() throws Exception {
@@ -189,17 +203,17 @@ public final class DirectConsolidationTest {
             cdn.failing.add(cdn("r4"));
             MediaLibrary second = fixture.open();
             DirectConsolidation.RunReport broken = new DirectConsolidation(second).run(INSTAGRAM, cdn, 50, () -> false);
-            assertTrue(broken.stoppedOnFailure);
-            assertEquals(1, broken.imported);
+            assertEquals(1, broken.failed);
+            assertEquals(6, broken.imported);
             assertFalse(broken.drained);
             DirectCoverage.Report mid = new DirectConsolidation(second).coverage().report(INSTAGRAM, ME, null);
-            assertEquals(4, mid.processed);
+            assertEquals(9, mid.processed);
             assertFalse(mid.complete());
             // Another process finishes; everything is stored exactly once.
             MediaLibrary third = fixture.open();
             DirectConsolidation.RunReport rest = new DirectConsolidation(third).run(INSTAGRAM, cdn, 50, () -> false);
             assertTrue(rest.drained);
-            assertEquals(6, rest.imported);
+            assertEquals(1, rest.imported);
             assertEquals(10, third.listChat(INSTAGRAM, ME, THREAD).size());
             assertTrue(new DirectConsolidation(third).coverage().report(INSTAGRAM, ME, null).complete());
             assertEquals(11, cdn.requested.size());
@@ -220,8 +234,7 @@ public final class DirectConsolidationTest {
             // Running again does not hammer the CDN with the same expired URL.
             consolidation.run(INSTAGRAM, cdn, 50, () -> false);
             assertEquals(1, cdn.requested.size());
-            // The client refreshed the message; its new URL is offered and works.
-            fixture.clock.addAndGet(60_000);
+            // An automatic offer may refresh the source in the same clock tick.
             DirectStoreRow fresh = DirectStoreRow.parse(ME, THREAD, "33001", "media", 1, row("33001", PEER, "media", imageMedia("new")));
             cdn.objects.put(cdn("new"), jpeg(33001));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(fresh), true);
@@ -316,7 +329,7 @@ public final class DirectConsolidationTest {
         return visual;
     }
 
-    @Test public void viewOnceIsFetchableOnlyWhenOwnOrAlreadyOpenedByTheAccount() throws Exception {
+    @Test public void everyViewOnceWithASourceIsFetchableAndKeepsItsMode() throws Exception {
         DirectStoreRow unseen = DirectStoreRow.parse(ME, THREAD, "60001", "raven_media", 1,
                 row("60001", PEER, "visual_media", visual("once", "u")).replace("\"item_type\":\"visual_media\"", "\"item_type\":\"raven_media\""));
         DirectStoreRow seenByOther = DirectStoreRow.parse(ME, THREAD, "60002", "visual_media", 1,
@@ -327,8 +340,10 @@ public final class DirectConsolidationTest {
                 row("60004", ME, "visual_media", visual("once", "m")));
         DirectStoreRow permanent = DirectStoreRow.parse(ME, THREAD, "60005", "raven_media", 1,
                 row("60005", PEER, "visual_media", visual("permanent", "p")).replace("\"item_type\":\"visual_media\"", "\"item_type\":\"raven_media\""));
-        assertFalse(unseen.parts.get(0).fetchAllowed);
-        assertFalse(seenByOther.parts.get(0).fetchAllowed);
+        assertTrue(unseen.parts.get(0).fetchAllowed);
+        assertTrue(unseen.viewOnce);
+        assertTrue(seenByOther.parts.get(0).fetchAllowed);
+        assertTrue(seenByOther.viewOnce);
         assertTrue(opened.parts.get(0).fetchAllowed);
         assertTrue(opened.seenByViewer);
         assertTrue(own.parts.get(0).fetchAllowed);
@@ -336,7 +351,7 @@ public final class DirectConsolidationTest {
         assertFalse(permanent.viewOnce);
     }
 
-    @Test public void aViewOnceIsKeptAfterTheUserOpensItAndKeepsItsFlag() throws Exception {
+    @Test public void aViewOnceIsKeptBeforeAndAfterTheUserOpensItAndKeepsItsFlag() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             MediaLibrary library = fixture.open();
             DirectConsolidation consolidation = new DirectConsolidation(library);
@@ -345,13 +360,14 @@ public final class DirectConsolidationTest {
             DirectStoreRow before = DirectStoreRow.parse(ME, THREAD, "61001", "visual_media", 1,
                     row("61001", PEER, "visual_media", visual("once", "vo")));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(before), false);
-            consolidation.run(INSTAGRAM, cdn, 10, () -> false);
-            assertTrue("nothing is requested before the user opens it", cdn.requested.isEmpty());
+            assertEquals("kept while still unopened", 1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
             fixture.clock.addAndGet(60_000);
             DirectStoreRow after = DirectStoreRow.parse(ME, THREAD, "61001", "visual_media", 1,
                     row("61001", PEER, "visual_media", visual("once", "vo", ME)));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(after), false);
-            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            assertEquals("opening it later does not fetch it again", 0,
+                    consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            assertEquals(1, cdn.requested.size());
             LibraryItem kept = library.lookup(INSTAGRAM, ME, THREAD, "61001", false);
             assertTrue(kept.viewOnce);
             assertEquals("captured", kept.origin);
@@ -365,9 +381,244 @@ public final class DirectConsolidationTest {
         DirectStoreRow restored = DirectStoreRow.parse(ME, THREAD, "62001", "visual_media", 1, json, "once");
         assertTrue(restored.viewOnce);
         assertTrue(restored.parts.get(0).identity.viewOnce);
-        assertTrue("Instagram already shows it as permanent media", restored.parts.get(0).fetchAllowed);
+        assertTrue("view-once media are kept as permanent copies", restored.parts.get(0).fetchAllowed);
         DirectStoreRow replay = DirectStoreRow.parse(ME, THREAD, "62002", "visual_media", 1,
                 row("62002", PEER, "visual_media", visual("permanent", "rp")), "replayable");
         assertTrue(replay.viewOnce);
+        assertTrue(replay.parts.get(0).fetchAllowed);
+        DirectStoreRow opened = DirectStoreRow.parse(ME, THREAD, "62003", "visual_media", 1,
+                row("62003", PEER, "visual_media", visual("permanent", "opened", ME)), "replayable");
+        assertTrue(opened.parts.get(0).fetchAllowed);
     }
+    @Test public void conventionalProjectionRespectsKnownOriginalMode() throws Exception {
+        String projection = row("62004", PEER, "media", imageMedia("projection"));
+        DirectStoreRow converted = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1,
+                projection, "replayable");
+        assertTrue(converted.viewOnce);
+        assertNotNull(converted.parts.get(0).best);
+        assertTrue(converted.parts.get(0).fetchAllowed);
+
+        DirectStoreRow conventional = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1, projection);
+        assertFalse(conventional.viewOnce);
+        assertTrue(conventional.parts.get(0).fetchAllowed);
+
+        JSONObject openedProjection = new JSONObject(projection);
+        openedProjection.put("visual_media", visual("permanent", "opened-projection", ME));
+        DirectStoreRow opened = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1,
+                openedProjection.toString(), "replayable");
+        assertTrue(opened.viewOnce);
+        assertTrue(opened.seenByViewer);
+        assertTrue(opened.parts.get(0).fetchAllowed);
+    }
+
+    @Test public void aConventionalProjectionSuppliesTheUrlOfAKnownViewOnce() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("cache-projection"), jpeg(62005));
+            DirectStoreRow original = DirectStoreRow.parse(ME, THREAD, "62005", "visual_media", 1,
+                    row("62005", PEER, "visual_media", visual("once", "original")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(original), false);
+
+            DirectStoreRow projected = DirectStoreRow.parse(ME, THREAD, "62005", "media", 1,
+                    row("62005", PEER, "media", imageMedia("cache-projection")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(projected), false);
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            assertTrue("the catalog keeps the known view-once mode",
+                    consolidation.coverage().report(INSTAGRAM, ME, null).threads.get(0).viewOnce == 1);
+        }
+    }
+
+    @Test public void aLaterPageWithoutASourceDoesNotCancelAnEligibleOffer() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("eligible-page"), jpeg(62006));
+            DirectStoreRow eligible = DirectStoreRow.parse(ME, THREAD, "62006", "media", 1,
+                    row("62006", PEER, "media", imageMedia("eligible-page")));
+            DirectStoreRow placeholder = DirectStoreRow.parse(ME, THREAD, "62006", "media", 1,
+                    new JSONObject().put("item_id", "62006").put("item_type", "media")
+                            .put("user_id", PEER).toString());
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(eligible), false);
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(placeholder), false);
+
+            assertEquals(DirectCoverage.State.PENDING,
+                    consolidation.coverage().stateOf(INSTAGRAM, ME, THREAD, "62006", false));
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
+    @Test public void manualOfferReportsQueuedStoredAndSkippedSeparately() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("saved"), jpeg(62007));
+            DirectStoreRow saved = DirectStoreRow.parse(ME, THREAD, "62007", "media", 1,
+                    row("62007", PEER, "media", imageMedia("saved")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(saved), false);
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+
+            DirectStoreRow eligible = DirectStoreRow.parse(ME, THREAD, "62008", "media", 1,
+                    row("62008", PEER, "media", imageMedia("eligible")));
+            DirectStoreRow blocked = DirectStoreRow.parse(ME, THREAD, "62009", "visual_media", 1,
+                    row("62009", PEER, "visual_media", visual("once", "blocked")));
+            List<DirectConsolidation.Offer> scan = new ArrayList<>();
+            scan.addAll(offers(saved));
+            scan.addAll(offers(eligible));
+            scan.addAll(offers(blocked));
+            DirectConsolidation.OfferReport report = consolidation.offerWithReport(INSTAGRAM, ME, THREAD, scan);
+            assertEquals(1, report.alreadyStored);
+            assertEquals("the conventional and the view-once item are both queued", 2, report.queued);
+            assertEquals(0, report.skipped);
+        }
+    }
+
+    @Test public void refreshedEligibleSourceReopensExhaustedRetries() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            DirectStoreRow failed = DirectStoreRow.parse(ME, THREAD, "62010", "media", 1,
+                    row("62010", PEER, "media", imageMedia("bad-source")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(failed), false);
+            for (int i = 0; i < DirectCoverage.MAX_ATTEMPTS; i++) {
+                cdn.failing.add(cdn("bad-source"));
+                assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).failed);
+            }
+            assertEquals(0, consolidation.run(INSTAGRAM, cdn, 10, () -> false).attempted);
+
+            cdn.objects.put(cdn("fresh-source"), jpeg(62010));
+            DirectStoreRow refreshed = DirectStoreRow.parse(ME, THREAD, "62010", "media", 1,
+                    row("62010", PEER, "media", imageMedia("fresh-source")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(refreshed), false);
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
+    @Test public void anExpiredInFlightSourceDoesNotSettleItsReplacement() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            DirectConsolidation consolidation = new DirectConsolidation(library);
+            String id = "63001";
+            DirectStoreRow old = DirectStoreRow.parse(ME, THREAD, id, "media", 1,
+                    row(id, PEER, "media", imageMedia("old-in-flight")));
+            DirectStoreRow fresh = DirectStoreRow.parse(ME, THREAD, id, "media", 1,
+                    row(id, PEER, "media", imageMedia("fresh-in-flight")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(old), false);
+            consolidation.run(INSTAGRAM, url -> {
+                assertEquals(cdn("old-in-flight"), url);
+                fixture.clock.incrementAndGet();
+                consolidation.offer(INSTAGRAM, ME, THREAD, offers(fresh), false);
+                fixture.clock.incrementAndGet();
+                return null;
+            }, 10, () -> false);
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("fresh-in-flight"), jpeg(63001));
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
+    @Test public void aTransientFailureDoesNotBlockLaterWorkInTheSamePass() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            DirectStoreRow old = DirectStoreRow.parse(ME, THREAD, "63002", "media", 1_000,
+                    row("63002", PEER, "media", imageMedia("reset")));
+            DirectStoreRow good = DirectStoreRow.parse(ME, THREAD, "63003", "media", 2_000,
+                    row("63003", PEER, "media", imageMedia("valid")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(old, good), false);
+            FakeCdn cdn = new FakeCdn();
+            cdn.failing.add(cdn("reset"));
+            cdn.objects.put(cdn("valid"), jpeg(63003));
+            DirectConsolidation.RunReport report = consolidation.run(INSTAGRAM, cdn, 10, () -> false);
+            assertEquals(1, report.failed);
+            assertEquals(1, report.imported);
+        }
+    }
+
+    @Test public void aParentResolvesEachUnambiguousCarouselPartInItsOwnScope() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            String parent = "63100";
+            for (String key : List.of(parent + ":1", parent + ":0", parent + ":20", parent + "9:0")) {
+                library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, key, false, 1, false),
+                        () -> new ByteArrayInputStream(jpeg(101)));
+            }
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, parent + ":1", true, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(102)));
+            ImportRequest scope = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, parent, false);
+            assertEquals(List.of(parent + ":0", parent + ":1"),
+                    library.listMessage(scope).stream().map(item -> item.messageKey).toList());
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, parent + ":1", false, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(103)));
+            assertEquals(List.of(parent + ":0"),
+                    library.listMessage(scope).stream().map(item -> item.messageKey).toList());
+            assertNull(library.inlineCopy(scope));
+        }
+    }
+
+    @Test public void offerDownloadValidationAndPersistenceAreDifferentEvents() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            List<String> events = new ArrayList<>();
+            DirectConsolidation consolidation = new DirectConsolidation(library,
+                    (account, thread, part, stage, detail) -> {
+                        assertEquals(ME, account);
+                        assertEquals(THREAD, thread);
+                        events.add(part + ":" + stage);
+                        if ("persisted".equals(stage)) {
+                            assertNotNull(library.lookup(INSTAGRAM, ME, THREAD, part, false));
+                        }
+                    });
+            DirectStoreRow bad = DirectStoreRow.parse(ME, THREAD, "63101", "media", 1,
+                    row("63101", PEER, "media", imageMedia("unsupported")));
+            DirectStoreRow good = DirectStoreRow.parse(ME, THREAD, "63102", "media", 2,
+                    row("63102", PEER, "media", imageMedia("complete")));
+            DirectConsolidation.OfferReport offered = consolidation.offerWithReport(INSTAGRAM, ME, THREAD,
+                    offers(bad, good));
+            assertEquals(2, offered.discovered);
+            assertEquals(2, offered.queued);
+            assertEquals(2, events.size());
+            assertTrue(library.listAll(false).isEmpty());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("unsupported"), new byte[] {10, 20, 30});
+            cdn.objects.put(cdn("complete"), jpeg(63102));
+            DirectConsolidation.RunReport report = consolidation.run(INSTAGRAM, cdn, 10, () -> false);
+            assertEquals(2, report.transferred);
+            assertEquals(1, report.validated);
+            assertEquals(1, report.persisted);
+            assertEquals(List.of("63101:catalog_offer", "63102:catalog_offer",
+                    "63101:transfer_start", "63101:transfer_response", "63101:transfer_complete", "63101:outcome",
+                    "63102:transfer_start", "63102:transfer_response", "63102:transfer_complete",
+                    "63102:validated", "63102:persisted", "63102:outcome"), events);
+        }
+    }
+
+    @Test public void inlineShowsTheExactCopyOfAMessageWhateverItsOriginOrMode() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            MediaLibrary library = fixture.open();
+            ImportRequest received = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63103", false);
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63103", false, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(105)));
+            assertNotNull("a captured received copy is shown", library.inlineCopy(received));
+            ImportRequest viewOnce = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63106", false);
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63106", false, 1, true),
+                    () -> new ByteArrayInputStream(jpeg(109)));
+            LibraryItem permanent = library.inlineCopy(viewOnce);
+            assertNotNull("a captured view-once copy replaces the ephemeral bubble", permanent);
+            assertTrue(permanent.viewOnce);
+            library.importMedia(received, () -> new ByteArrayInputStream(jpeg(105)));
+            assertNotNull(library.inlineCopy(received));
+            library.importMedia(received, () -> new ByteArrayInputStream(jpeg(106)));
+            assertNull(library.inlineCopy(received)); // Two conflicting copies.
+            ImportRequest manual = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63104", false);
+            library.importMedia(manual, () -> new ByteArrayInputStream(jpeg(107)));
+            assertNotNull(library.inlineCopy(manual));
+            assertNull(library.inlineCopy(ImportRequest.forMessage(INSTAGRAM, ME, "other", "63104", false)));
+            assertNull(library.inlineCopy(ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63104", true)));
+            ImportRequest own = ImportRequest.forMessage(INSTAGRAM, ME, THREAD, "63105", true);
+            library.importMedia(ImportRequest.captured(INSTAGRAM, ME, THREAD, "63105", true, 1, false),
+                    () -> new ByteArrayInputStream(jpeg(108)));
+            assertNotNull(library.inlineCopy(own));
+        }
+    }
+
 }

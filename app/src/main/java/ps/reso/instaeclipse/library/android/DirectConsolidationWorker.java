@@ -8,109 +8,122 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import javax.net.ssl.HttpsURLConnection;
 
 import ps.reso.instaeclipse.library.core.DirectConsolidation;
 import ps.reso.instaeclipse.library.core.DirectStoreRow;
-import ps.reso.instaeclipse.library.core.MediaLibrary;
 
 /**
  * Module-process worker: fetches recorded CDN URLs of conventional Direct media and keeps them.
  * One run at a time; sequential; stops at the first transient failure (retried next run).
  *
  * <p>The request carries no cookies or Instagram credentials and follows no redirect outside the
- * media CDNs. View-once items never get a URL recorded, so they are never requested.</p>
+ * media CDNs. Only sources admitted by DirectConsolidation are recorded and fetched.</p>
  */
 public final class DirectConsolidationWorker {
     private static final String TAG = "IeDirectConsolidation";
     private static final int BUDGET = 25;
-    private static final AtomicBoolean running = new AtomicBoolean();
-    private static final AtomicBoolean pause = new AtomicBoolean();
-    /** Set by any request; a finishing worker checks it after clearing {@link #running}. */
-    private static final AtomicBoolean requested = new AtomicBoolean();
-    private static final AtomicReference<DirectConsolidation.RunReport> last = new AtomicReference<>();
+    private enum Request { AUTO, RESUME, RETRY_FAILURES, PAUSE }
+
+    private static final Object requests = new Object();
+    private static Request pending;
+    private static volatile boolean running;
+    private static volatile boolean pause;
 
     private DirectConsolidationWorker() {}
 
-    public static boolean isRunning() { return running.get(); }
+    public static boolean isRunning() { return running; }
 
-    public static DirectConsolidation.RunReport lastReport() { return last.get(); }
-
-    /** Pauses now and persistently: neither a restart nor an automatic resume undoes it. */
+    /** Stops the active transfer and serializes the persistent pause with resume requests. */
     public static void requestPause(Context context) {
-        pause.set(true);
-        Context app = context.getApplicationContext();
-        Thread thread = new Thread(() -> {
-            try {
-                new DirectConsolidation(MediaLibraryRuntime.get(app)).setPaused(true);
-            } catch (IOException | RuntimeException failure) {
-                Log.w(TAG, "pause not persisted: " + failure.getClass().getSimpleName());
-            }
-        }, "ie-direct-consolidation-pause");
-        thread.setDaemon(true);
-        thread.start();
+        submit(context, Request.PAUSE);
     }
 
-    /**
-     * @param explicit a user action (a scan they started, or "continue"): clears a pause and,
-     *                 for "continue", gives failed items a fresh set of attempts. Automatic
-     *                 resumes ({@code explicit=false}) never override a pause.
-     */
+    /** Automatic offers respect a pause; an explicit continuation can reset exhausted attempts. */
     public static void kick(Context context, boolean explicit, boolean resetFailures) {
-        Context app = context.getApplicationContext();
-        if (explicit) pause.set(false);
-        requested.set(true);
-        if (!running.compareAndSet(false, true)) return;
-        Thread thread = new Thread(() -> work(app, explicit, resetFailures), "ie-direct-consolidation");
-        thread.setDaemon(true);
-        thread.start();
+        submit(context, resetFailures ? Request.RETRY_FAILURES : explicit ? Request.RESUME : Request.AUTO);
     }
 
-    private static void work(Context app, boolean explicit, boolean resetFailures) {
-        DirectConsolidation.RunReport total = new DirectConsolidation.RunReport();
-        try {
-            MediaLibrary library = MediaLibraryRuntime.get(app);
-            DirectConsolidation consolidation = new DirectConsolidation(library);
-            if (explicit) consolidation.setPaused(false);
-            else if (consolidation.isPaused()) pause.set(true);
-            if (resetFailures) consolidation.resetFailures(DirectStoreScanner.HOST);
-            // Stop as soon as the user pauses or turns the feature off, also mid-transfer.
-            BooleanSupplier stop = () -> pause.get() || !ConversationGalleryProvider.consolidationEnabled(app);
-            while (requested.getAndSet(false) && !stop.getAsBoolean()) {
-                while (true) {
-                    DirectConsolidation.RunReport report = consolidation.run(DirectStoreScanner.HOST,
-                            DirectConsolidationWorker::open, BUDGET, stop);
-                    add(total, report);
-                    if (report.drained || report.stoppedOnFailure || report.cancelled || report.attempted == 0) break;
+    private static void submit(Context context, Request request) {
+        synchronized (requests) {
+            if (request == Request.PAUSE) {
+                pause = true;
+                pending = request;
+            } else if (request == Request.RESUME || request == Request.RETRY_FAILURES) {
+                pause = false;
+                if (pending != Request.RETRY_FAILURES) pending = request;
+            } else if (pending == null) {
+                pending = request;
+            }
+            if (running) return;
+            running = true;
+            Context app = context.getApplicationContext();
+            Thread thread = new Thread(() -> work(app != null ? app : context), "ie-direct-consolidation");
+            thread.setDaemon(true);
+            thread.start();
+        }
+    }
+
+    private static void work(Context app) {
+        while (true) {
+            Request request;
+            synchronized (requests) {
+                request = pending;
+                pending = null;
+                if (request == null) {
+                    running = false;
+                    return;
                 }
             }
-        } catch (IOException | RuntimeException failure) {
-            total.stoppedOnFailure = true;
-            Log.w(TAG, "run failed: " + failure.getClass().getSimpleName());
-        } finally {
-            last.set(total);
-            running.set(false);
+            try {
+                DirectConsolidation consolidation = new DirectConsolidation(MediaLibraryRuntime.get(app), DirectTrace.PROGRESS);
+                if (request == Request.PAUSE) {
+                    consolidation.setPaused(true);
+                    continue;
+                }
+                if (request != Request.AUTO) consolidation.setPaused(false);
+                if (request == Request.RETRY_FAILURES) consolidation.resetFailures(DirectStoreScanner.HOST);
+                run(app, consolidation);
+            } catch (IOException | RuntimeException failure) {
+                Log.w(TAG, "request=" + request + " failed: " + failure.getClass().getSimpleName());
+            }
         }
-        Log.i(TAG, "run imported=" + total.imported + " present=" + total.alreadyPresent
-                + " unavailable=" + total.unavailable + " refused=" + total.refused
-                + " ambiguous=" + total.ambiguous + " failed=" + total.failed + " drained=" + total.drained);
-        // A request that arrived after the last check but before running was cleared.
-        if (requested.get() && !pause.get() && !total.stoppedOnFailure) kick(app, false, false);
+    }
+
+    private static void run(Context app, DirectConsolidation consolidation) throws IOException {
+        DirectConsolidation.RunReport total = new DirectConsolidation.RunReport();
+        boolean paused = consolidation.isPaused();
+        BooleanSupplier stop = () -> pause || !ConversationGalleryProvider.consolidationEnabled(app);
+        if (paused || stop.getAsBoolean()) {
+            total.cancelled = true;
+        } else {
+            do {
+                DirectConsolidation.RunReport report = consolidation.run(DirectStoreScanner.HOST,
+                        DirectConsolidationWorker::open, BUDGET, stop);
+                add(total, report);
+                if (report.drained || report.cancelled || report.attempted == 0) break;
+            } while (!stop.getAsBoolean());
+        }
+        Log.i(TAG, "run imported=" + total.imported
+                + " present=" + total.alreadyPresent + " unavailable=" + total.unavailable + " refused=" + total.refused
+                + " ambiguous=" + total.ambiguous + " failed=" + total.failed + " drained=" + total.drained
+                + " superseded=" + total.superseded + " attempted=" + total.attempted + " transferred=" + total.transferred + " validated=" + total.validated + " persisted=" + total.persisted + " paused=" + (paused || pause) + " cancelled=" + total.cancelled);
     }
 
     private static void add(DirectConsolidation.RunReport total, DirectConsolidation.RunReport r) {
         total.attempted += r.attempted;
+        total.transferred += r.transferred;
+        total.validated += r.validated;
+        total.persisted += r.persisted;
         total.imported += r.imported;
         total.alreadyPresent += r.alreadyPresent;
         total.unavailable += r.unavailable;
         total.refused += r.refused;
         total.ambiguous += r.ambiguous;
         total.failed += r.failed;
-        total.stoppedOnFailure |= r.stoppedOnFailure;
+        total.superseded += r.superseded;
         total.cancelled |= r.cancelled;
         total.drained = r.drained;
     }
@@ -128,6 +141,7 @@ public final class DirectConsolidationWorker {
             connection.setReadTimeout(30_000);
             connection.setRequestProperty("Accept-Encoding", "identity");
             int code = connection.getResponseCode();
+            DirectTrace.summary("cdn_http", "code=" + code + " hop=" + hop);
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                 current = connection.getHeaderField("Location");
                 connection.disconnect();

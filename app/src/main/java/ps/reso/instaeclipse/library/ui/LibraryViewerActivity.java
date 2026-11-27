@@ -121,8 +121,10 @@ public final class LibraryViewerActivity extends AppCompatActivity {
         caption.setText(text);
         if (item.isVideo()) {
             video = new VideoView(this);
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+            // Exact bounds: VideoView then fits the video's aspect to the screen. Wrap-content kept the
+            // file's own pixel size, so a 360x640 Direct video showed as a small box.
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
             stage.addView(video, params);
             MediaController controller = new MediaController(this);
             controller.setAnchorView(video);

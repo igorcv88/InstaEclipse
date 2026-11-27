@@ -73,11 +73,17 @@ O ID usado pelo `CurrentConversation` (`thread:`), o `thread_id` de `direct.db` 
 
 `DirectLiveCapture` intercepta esses construtores, serializa o modelo de mensagens `media`, `raven_media` e `visual_media`, aplica o mesmo `DirectStoreRow` e oferece ao módulo em lotes de 1,5 s, uma vez por mensagem e estado. Visualização única e com repetição só recebem URL quando a conta é a remetente ou já aparece em `seen_user_ids`.
 
+### Evidência física da captura ao vivo (2026-11-27)
+
+- `direct.db` guarda só a primeira página de cada conversa (o que aparece ao abrir). As páginas carregadas ao rolar para cima não são gravadas: o botão de leitura do cache nunca as vê.
+- Com `511a1ff`/`7de23ab`, o hook dos construtores estáticos de `X.0BMD`/`X.0Bu5` só viu linhas `TEXT` (`X.0BMD.A01`). As linhas de mídia da conversa de teste passam por outro caminho, por exemplo `X.0C0s.Ag6(X.01Fo)` (método de instância), que também cria o modelo visual `X.0E34`.
+- Ponto de captura passa a ser o construtor único de `X.01Fo(UserSession, X.019w, X.01hK, X.0ZiN)`, que todo caminho de linha recebe pronto (6 chamadas no DEX).
+
 ## Interação com "Visualização única ilimitada"
 
 `GhostPermanentViewHook` (opção `permanentViewMode`) reescreve `view_mode` de `once`/`replayable` para `permanent` no objeto `X.02jG` devolvido pelo parser, antes de o Instagram gravar `direct.db` e antes da captura serializar o modelo. Com a opção ligada, `permanent` deixa de provar que a mídia é permanente. As 4 linhas do teste físico podem ter sido visualização única reescrita.
 
-Correção: o hook passa a registrar o modo original por objeto (`ORIGINAL_BY_OBJECT`, chaves fracas) e a captura ao vivo classifica pelo modo original. Com a opção ligada, o Instagram já exibe essas mídias como permanentes e abri-las não consome a visualização, então a captura é permitida e o item entra na biblioteca marcado como visualização única. Sem a opção, vale a regra de própria ou já aberta.
+Correção: o hook passa a registrar o modo original por objeto (`ORIGINAL_BY_OBJECT`, chaves fracas) e a captura ao vivo classifica pelo modo original. A biblioteca usa o modo original para decidir a elegibilidade. A reescrita em memória não autoriza a cópia de uma mídia recebida ainda não aberta. Vale a regra de própria ou já aberta pela conta.
 
 Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o modo original. A varredura do cache continua classificando essas linhas como permanentes.
 
@@ -89,3 +95,37 @@ Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o m
 4. Verificação de que a ação Salvar e a linha de `direct.db` da mesma mensagem dão o mesmo ID.
 5. Rede: com proxy ou `logcat`, confirmar que a consolidação só faz requisições a hosts de CDN e nenhuma a `i.instagram.com`.
 6. Visualização única de teste: confirmar que o remetente continua vendo a mídia como não aberta depois de uma consolidação da conversa.
+
+## Transporte e paginação no PR #9
+
+- O log do aparelho mostrou linhas antigas entrando na fila e lotes inteiros saindo com `(no context)`. O hook é instalado durante ou a partir de `Application.attach`. Caso o contexto da aplicação ainda não esteja publicado, o flush usa o contexto base do host. A fila só confirma as linhas depois do aceite do provider e tenta de novo em falhas transitórias.
+- Para linhas ainda sem chave própria, `X.01Fo.A0K` aponta para `X.019w`. No APK 454, `X.01CY.A02` passa `X.019w.A0T` a `X.01Fh.A00`, que usa `X.00OP.A00` para criar `DirectThreadKey`. A prévia pr.46 usava o campo errado (`A0V`) e descartou linhas antigas antes da fila. Se o metadado continuar sem chave, a captura usa a conversa passada ao gerador nativo do mesmo lote (`X.01CY.A02`, quarto argumento, chave por `X.09WC.Ccj()`), com a conta do próprio gerador. Se as identidades explícitas divergirem, a linha é recusada.
+- Em `classes12.dex`, `X.0CHD` lê `items`, `has_older` e `oldest_cursor`. `X.0ANV.A02` mapeia os valores para `X.0R7T.A00`, `A08` e `A05`. `X.0AYL.A0x()` expõe a resposta nativa e `Dpk()` expõe a conversa da requisição; a conta vem da sessão do mesmo objeto de requisição.
+- A captura observa essa resposta e oferece as mídias da página inteira, inclusive as que ainda não foram montadas em uma linha. Os logs contêm contagens e presença de cursor. Essa rota precisa ser confirmada no Galaxy. Ela é passiva e nenhuma observação marca uma conversa como consolidada.
+- O histórico remoto completo ainda depende de validar a enumeração paginada da inbox e um caminho de leitura por conversa que funcione sem navegar para ela ou enviar recibos. `direct.db` continua sendo uma fonte parcial.
+
+## Balão visual (visualização única, repetição, manter na conversa)
+
+| Fato | Classe | Confiança |
+|---|---|---|
+| `X.02vL` infla `layout/direct_visual_message` (0x7f0e0506) em `B6O`, faz bind em `AWs(X.0AHX, X.0E34)` e unbind em `Hjg(X.0AHX)` | `X.02vL` | A |
+| Holder `X.0AHX`: `A04` = `FrameLayout` do balão, `A05` = ícone, `A06` = rótulo, `A08` = overlay de progresso | `X.02vL.B6O` | A |
+| Modelo `X.0E34 extends X.0B79`; identidade em `X.03QJ` (`A0D`), igual à linha convencional: `CpM()` = identificador, `A05` = thread, `A09` = direção. Sessão em `X.02vL.A01` | `X.0E34`, `X.02vL` | A |
+
+Evidência física (Galaxy, `IEDirectTrace`, 27/11 16:14): 27 partes efêmeras com `source_gap=no_versions` (o Instagram remove as versões depois da visualização), 4 delas já guardadas; 11 consultas `inline_lookup result=no_eligible_copy`, 2 delas para mensagens com cópia guardada. `DirectInlinePreview` passa a desenhar a cópia guardada no balão visual e `MediaLibrary.inlineCopy` aceita cópias capturadas e de visualização única.
+
+
+### Teste físico de 2026-11-27 (tile) e ajustes
+
+- O tile `X.0ThE` recebeu a cópia (21 aplicações, expirado e visualizável). A cópia ia para `X.0Ths.A01` (`message_content_visual_thumbnail_bubble_container`) com `MATCH_PARENT`; esse container é `wrap_content` e, em mídia expirada, a imagem nativa `A03` fica pequena, então a cópia ficava minúscula no canto. Agora a cópia de qualquer balão efêmero tem tamanho de foto (240dp de largura, altura pela proporção entre 140dp e 340dp) e a imagem nativa (`A03`), o overlay de pendência (`A00`), o glifo (`A02`) e o progresso (`A04`) ficam ocultos com restauração compare-and-restore. O container passa a ter o tamanho da cópia.
+- Toque na cópia abre direto o visualizador com a cópia da mensagem (extra `open_copy`, que só dispensa a grade; a concessão continua restrita à mesma mensagem). Sem cópia, abre a galeria da mensagem.
+- `direct_visual_message` (0x7f0e0506) só é inflado por `X.02vL.B6O`, mas nenhum bind de `X.02vL` apareceu no teste. A pílula "(1) Foto" vista no aparelho vem de outro binder. Diagnóstico `row_binder` (só com o trace ligado): nos despachantes genéricos `X.0BID.A0R` e `X.0BO7.A0R`, uma linha por combinação de definição, modelo e tipo.
+
+### Pílula de visualização única é Compose
+
+- `dumpsys activity top` com a pílula "(1) Photo" na tela: as linhas da `message_list` são `message_content` (View) ou `com.facebook.compose.view.MetaComposeView` com um `AndroidComposeView` sem filhos nativos. A pílula é uma linha Compose. O diagnóstico `row_binder` do mesmo teste só registrou `X.0ThE`, `X.0BNB`, `X.03LC` e `X.0UZF`; nenhum binder de View desenha a pílula.
+- As linhas Compose são criadas por `X.0BUa.A0V` (holder `X.0D7T`) e `X.0Bqa.A0V` (holder `X.0D8e`). `X.0D7T` é ligado com o contexto da mensagem `X.01Fo` e desligado em `A0H()`.
+- Identidade: as mesmas propriedades de linha das outras rotas, `X.03QH.A03(UserSession, X.01Fo, X.01lY)` → `X.03QJ` (`A04` identificador, `A05` conversa, `A09` própria).
+- Apresentação: um `ComposeView` não aceita views filhas. Com cópia da mensagem, a foto é desenhada no `ViewOverlay` da linha, o `AndroidComposeView` fica invisível, a linha recebe a altura da foto e um toque dentro da foto abre a cópia. Tudo é restaurado (compare-and-restore) no unbind, antes de cada bind e ao sair da janela.
+- `X.0D8e.A0I` só é registrado (`row_binder`), para saber se alguma pílula usa esse holder.
+- Teste físico (pr.65): `X.0D7T` recebeu as pílulas (`inline_compose result=bind kind=EXPIRING_MEDIA`), mas a pílula não traz a parte de mídia `X.01lY` (`no_session_or_part`). A identidade passa a vir do próprio modelo (`X.01hK.A0o()` id, `A0n()` contexto local, `X.0DKm.A0T` conversa, com `X.01Fo.A0K.A0T` como alternativa). Sem a parte não há direção; a cópia é procurada nas duas, e só uma pode existir para um id de mensagem.

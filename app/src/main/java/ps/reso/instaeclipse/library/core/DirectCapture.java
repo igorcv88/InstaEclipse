@@ -37,10 +37,18 @@ public final class DirectCapture {
      */
     public Outcome capture(String packageName, String accountKey, String threadKey,
                            DirectCoverage.Discovered identity, MediaLibrary.StreamSource source) throws IOException {
+        return capture(packageName, accountKey, threadKey, identity, source, null, 0L, DirectProgress.NONE);
+    }
+
+    Outcome capture(String packageName, String accountKey, String threadKey,
+                    DirectCoverage.Discovered identity, MediaLibrary.StreamSource source,
+                    String attemptedSource, long sourceVersion, DirectProgress progress) throws IOException {
         if (source == null) {
-            DirectCoverage.State state = coverage.settle(packageName, accountKey, threadKey, identity,
-                    DirectCoverage.State.UNAVAILABLE, null, "no_bytes");
-            return new Outcome(state, null, "no_bytes");
+            DirectCoverage.State state = coverage.settleTransfer(packageName, accountKey, threadKey, identity,
+                    DirectCoverage.State.UNAVAILABLE, null, "no_bytes", attemptedSource, sourceVersion);
+            DirectCoverage.State reported = attemptedSource == null || state == DirectCoverage.State.PENDING
+                    ? state : DirectCoverage.State.UNAVAILABLE;
+            return new Outcome(reported, null, "no_bytes");
         }
         ImportRequest request = ImportRequest.captured(packageName, accountKey, threadKey, identity.messageKey,
                 identity.fromMe, identity.timestamp, identity.viewOnce);
@@ -48,8 +56,10 @@ public final class DirectCapture {
         LibraryItem item = null;
         String error = null;
         try {
-            MediaLibrary.ImportResult result = library.importMedia(request, source);
+            MediaLibrary.ImportResult result = library.importMedia(request, source, progress);
             item = result.item;
+            progress.event(accountKey, threadKey, identity.messageKey, "persisted",
+                    "status=" + result.status + " bytes=" + item.sizeBytes);
             outcome = result.status == MediaLibrary.ImportStatus.ALREADY_PRESENT
                     ? DirectCoverage.State.ALREADY_PRESENT : DirectCoverage.State.IMPORTED;
             // Two different copies now claim this identity: report it, never pick one.
@@ -71,8 +81,10 @@ public final class DirectCapture {
             error = "IO";
             outcome = DirectCoverage.State.FAILED;
         }
-        DirectCoverage.State recorded = coverage.settle(packageName, accountKey, threadKey, identity, outcome,
-                item == null ? null : item.uuid, error);
-        return new Outcome(recorded, item, error);
+        DirectCoverage.State recorded = coverage.settleTransfer(packageName, accountKey, threadKey, identity, outcome,
+                item == null ? null : item.uuid, error, attemptedSource, sourceVersion);
+        DirectCoverage.State reported = attemptedSource == null || recorded == DirectCoverage.State.PENDING
+                ? recorded : outcome;
+        return new Outcome(reported, item, error);
     }
 }

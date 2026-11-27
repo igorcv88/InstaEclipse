@@ -55,8 +55,8 @@ public final class DirectLiveCapture {
             return size() > SEEN_LIMIT;
         }
     };
-    /** Pending rows per account|thread, flushed together. */
-    private static final Map<String, List<DirectStoreRow>> pending = new LinkedHashMap<>();
+    /** Pending rows per account|thread, keyed by message id: a later state replaces an earlier one. */
+    private static final Map<String, Map<String, DirectStoreRow>> pending = new LinkedHashMap<>();
 
     private DirectLiveCapture() {}
 
@@ -139,10 +139,13 @@ public final class DirectLiveCapture {
                         .originalMode(visualModel.get(model));
                 DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
                 if (row == null) return;
-                boolean fetchable = false;
-                for (DirectStoreRow.Part part : row.parts) fetchable |= part.fetchAllowed;
-                // A view-once item is offered again once the user opens it (fetchable changes).
-                String seenKey = account + '|' + thread + '|' + id + '|' + fetchable;
+                // Offered again when fetchability or a URL changes: a view-once the user opened, or
+                // a refreshed CDN URL after the previous one expired.
+                StringBuilder state = new StringBuilder();
+                for (DirectStoreRow.Part part : row.parts) {
+                    state.append(part.fetchAllowed ? part.best.url : "-").append('\n');
+                }
+                String seenKey = account + '|' + thread + '|' + id + '|' + state.toString().hashCode();
                 synchronized (offered) {
                     if (offered.put(seenKey, Boolean.TRUE) != null) return;
                 }
@@ -158,13 +161,13 @@ public final class DirectLiveCapture {
         boolean schedule;
         synchronized (pending) {
             schedule = pending.isEmpty();
-            pending.computeIfAbsent(scope, ignored -> new ArrayList<>()).add(row);
+            pending.computeIfAbsent(scope, ignored -> new LinkedHashMap<>()).put(row.itemId, row);
         }
         if (schedule) worker.postDelayed(DirectLiveCapture::flush, FLUSH_DELAY_MS);
     }
 
     private static void flush() {
-        Map<String, List<DirectStoreRow>> batch;
+        Map<String, Map<String, DirectStoreRow>> batch;
         synchronized (pending) {
             batch = new LinkedHashMap<>(pending);
             pending.clear();
@@ -172,11 +175,12 @@ public final class DirectLiveCapture {
         Context context = appContext;
         if (context == null) return;
         int sent = 0;
-        for (List<DirectStoreRow> rows : batch.values()) {
+        for (Map<String, DirectStoreRow> byId : batch.values()) {
+            List<DirectStoreRow> rows = new ArrayList<>(byId.values());
             DirectStoreRow first = rows.get(0);
             for (List<DirectStoreRow> part : DirectStoreRow.batches(rows,
                     ps.reso.instaeclipse.library.core.DirectConsolidation.MAX_OFFER_PARTS)) {
-                Boolean accepted = DirectStoreScanner.offer(context, first.accountId, first.threadId, part);
+                Boolean accepted = DirectStoreScanner.offer(context, first.accountId, first.threadId, part, false);
                 if (!Boolean.TRUE.equals(accepted)) {
                     forget(part);
                     ModuleLog.line("(IE|MediaLibrary) live capture offer "

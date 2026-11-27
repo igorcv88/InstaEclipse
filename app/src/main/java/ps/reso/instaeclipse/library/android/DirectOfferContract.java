@@ -10,6 +10,8 @@ final class DirectOfferContract {
     static final String FLAGS = "offer_flags";
     static final String TIMESTAMPS = "offer_timestamps";
     static final String ACCEPTED = "offer_accepted";
+    /** True only for a scan the user started; automatic capture never clears a pause. */
+    static final String EXPLICIT = "offer_explicit";
 
     private DirectOfferContract() {}
 }

@@ -74,8 +74,8 @@ public final class ConversationGalleryProvider extends ContentProvider {
         } catch (java.io.IOException | RuntimeException failure) {
             return reply;
         }
-        // The scanner only runs from an explicit user action, so this clears a previous pause.
-        DirectConsolidationWorker.kick(context, true, false);
+        // Only a scan the user started clears a pause; automatic capture respects it.
+        DirectConsolidationWorker.kick(context, extras.getBoolean(DirectOfferContract.EXPLICIT, false), false);
         reply.putBoolean(DirectOfferContract.ACCEPTED, true);
         return reply;
     }

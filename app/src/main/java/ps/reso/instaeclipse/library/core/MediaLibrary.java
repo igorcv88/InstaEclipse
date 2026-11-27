@@ -39,7 +39,7 @@ public final class MediaLibrary {
 
     private static final String ITEM_COLUMNS = "i.id, i.uuid, i.account_id, a.package_name, a.account_key, i.thread_key, "
             + "i.message_key, i.from_me, i.media_kind, i.mime_type, i.sha256, "
-            + "b.size_bytes, i.message_timestamp, i.imported_at, i.origin, i.caption, i.trashed_at, b.state";
+            + "b.size_bytes, i.message_timestamp, i.imported_at, i.origin, i.caption, i.trashed_at, b.state, i.view_once";
     private static final String ITEM_FROM = " FROM items i JOIN accounts a ON a.id = i.account_id "
             + "JOIN blobs b ON b.sha256 = i.sha256 ";
 
@@ -187,10 +187,11 @@ public final class MediaLibrary {
                 }
                 String id = UUID.randomUUID().toString();
                 sql.insert("INSERT INTO items (uuid, account_id, thread_key, message_key, from_me, "
-                                + "media_kind, mime_type, sha256, message_timestamp, imported_at, origin, caption) "
-                                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                                + "media_kind, mime_type, sha256, message_timestamp, imported_at, origin, caption, view_once) "
+                                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         id, accountId, request.threadKey, request.messageKey, request.fromMe ? 1 : 0,
-                        kind, mime, staged.sha256, request.messageTimestamp, now, origin, request.caption);
+                        kind, mime, staged.sha256, request.messageTimestamp, now, origin, request.caption,
+                        request.viewOnce ? 1 : 0);
                 return id;
             });
         } catch (RuntimeException failure) {

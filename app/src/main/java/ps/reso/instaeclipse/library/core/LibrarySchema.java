@@ -7,9 +7,9 @@ import java.util.Map;
 
 /** Transactional catalog migrations. Future catalog versions are refused. */
 public final class LibrarySchema {
-    public static final int CURRENT_VERSION = 1;
+    public static final int CURRENT_VERSION = 2;
 
-    static final String[] TABLES = { "accounts", "blobs", "items", "meta" };
+    static final String[] TABLES = { "accounts", "blobs", "items", "meta", "direct_items", "direct_threads" };
 
     /** One forward migration step from {@code version - 1} to {@code version}. */
     public interface Step {
@@ -48,6 +48,17 @@ public final class LibrarySchema {
             @Override
             public void apply(Sql sql) {
                 createVersion1(sql);
+            }
+        });
+        steps.add(new Step() {
+            @Override
+            public int version() {
+                return 2;
+            }
+
+            @Override
+            public void apply(Sql sql) {
+                createVersion2(sql);
             }
         });
         return steps;
@@ -138,5 +149,46 @@ public final class LibrarySchema {
         sql.exec("CREATE INDEX IF NOT EXISTS idx_items_chat ON items(account_id, thread_key, message_timestamp)");
         sql.exec("CREATE INDEX IF NOT EXISTS idx_items_sha ON items(sha256)");
         sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)");
+    }
+
+    /**
+     * Version 2: Direct coverage. {@code direct_items} records every message with media the
+     * client showed, with its own settled state; {@code direct_threads} records how far the
+     * pages reached. Neither table is ever pruned because a message is absent from a page.
+     */
+    static void createVersion2(Sql sql) {
+        sql.exec("ALTER TABLE items ADD COLUMN view_once INTEGER NOT NULL DEFAULT 0");
+        sql.exec("CREATE TABLE IF NOT EXISTS direct_items ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "account_id INTEGER NOT NULL REFERENCES accounts(id), "
+                + "thread_key TEXT NOT NULL, "
+                + "message_key TEXT NOT NULL, "
+                + "from_me INTEGER NOT NULL, "
+                + "media_kind TEXT NOT NULL CHECK(media_kind IN ('image','video','unknown')), "
+                + "view_once INTEGER NOT NULL, "
+                + "message_timestamp INTEGER NOT NULL DEFAULT 0, "
+                + "discovered_at INTEGER NOT NULL, "
+                + "last_seen_at INTEGER NOT NULL, "
+                + "state TEXT NOT NULL CHECK(state IN ('pending','imported','already_present','unavailable',"
+                + "'refused','ambiguous','failed')), "
+                + "attempts INTEGER NOT NULL DEFAULT 0, "
+                + "last_error TEXT, "
+                + "item_uuid TEXT, "
+                + "settled_at INTEGER NOT NULL DEFAULT 0, "
+                + "source_url TEXT, "
+                + "source_seen_at INTEGER NOT NULL DEFAULT 0, "
+                + "UNIQUE(account_id, thread_key, message_key, from_me))");
+        sql.exec("CREATE INDEX IF NOT EXISTS idx_direct_items_state ON direct_items(account_id, state)");
+        sql.exec("CREATE TABLE IF NOT EXISTS direct_threads ("
+                + "account_id INTEGER NOT NULL REFERENCES accounts(id), "
+                + "thread_key TEXT NOT NULL, "
+                + "newest_key TEXT, "
+                + "newest_ts INTEGER NOT NULL DEFAULT 0, "
+                + "oldest_key TEXT, "
+                + "oldest_ts INTEGER NOT NULL DEFAULT 0, "
+                + "reached_start INTEGER NOT NULL DEFAULT 0, "
+                + "pages INTEGER NOT NULL DEFAULT 0, "
+                + "updated_at INTEGER NOT NULL, "
+                + "PRIMARY KEY(account_id, thread_key))");
     }
 }

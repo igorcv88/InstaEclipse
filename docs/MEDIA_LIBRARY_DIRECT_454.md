@@ -10,6 +10,26 @@ O seletor da pasta descobre candidatos antes da confirmação. A validação lê
 
 Há um lote pendente por instalação. A sessão guarda a lista de documentos e o checkpoint em arquivos separados e retoma depois do último resultado confirmado. O passo idempotente cobre uma interrupção entre o commit de um item e o registro do progresso. Se o Direct fechou ou a mensagem saiu da tela, volte à biblioteca principal e use **Gerenciar → Retomar importação do Direct**. O resultado do último lote concluído é consultável no escopo correspondente. Coleções grandes consomem espaço no armazenamento privado.
 
+## Consolidação a partir do cache local
+
+Decisões do responsável, vinculantes, mais recentes primeiro:
+
+1. **2026-11-27.** Nenhuma operação automática pode consumir uma visualização única ou alterar de forma irreversível o estado de uma mensagem no servidor. A consolidação histórica de arquivos elegíveis fica separada da abertura de mensagens efêmeras. A validação inicial usa somente mídias de teste próprias ou autorizadas, sem operações em massa sobre conversas reais. Biblioteca, associação individual e integração visual são validadas de forma independente. A disponibilidade nativa é preservada e a apresentação inline futura não é garantia contra perda. Substitui a aceitação de prefetch dada na mesma sessão.
+2. **2026-11-26.** Integração visual híbrida: investigar Compose atrás de uma flag própria; apresentação nativa e galeria própria como fallback permanente.
+
+Com **Atalho da biblioteca no Direct** e **Guardar mídias do Direct a partir do cache local do Instagram** ligados (a segunda vem desligada), o menu da conversa ganha **Guardar mídias desta conversa** e **Guardar mídias de todas as conversas em cache**. Nada roda sem esse toque e a confirmação.
+
+O fluxo tem quatro etapas registradas separadamente:
+
+1. **Descoberta.** No processo do Instagram, `DirectStoreScanner` abre `databases/direct.db` somente para leitura e só se o esquema for o 15 de 454. Lê as linhas de mídia da conta ativa: de uma conversa ou, na ação explícita da conta, de todas. A identidade vem das colunas do próprio Instagram. Ver o [inventário](MEDIA_LIBRARY_DIRECT_454_INVENTORY.md).
+2. **Associação.** `DirectStoreRow` exige que o JSON da linha concorde com as colunas e tenha o remetente. Carrosséis viram `id:índice`. Linhas que não fecham são recusadas e contadas. Nenhum vínculo é inferido por horário, nome ou posição.
+3. **Importação.** O módulo baixa a URL de CDN do modelo e passa os bytes pelo importador existente: hash, validação estrutural, decodificação, deduplicação e commit. Visualização única e mídias com repetição nunca têm URL enviada nem baixada e ficam `unavailable` com `view_once_not_fetched`.
+4. **Relatório.** **Gerenciar → Cobertura do Direct** mostra conversas, completas, descobertos, guardados, indisponíveis, visualização única, recusados, ambíguos e pendentes. O botão continua ou pausa as cópias.
+
+O checkpoint é o estado de cada identidade. Pausa, morte do processo e reinício retomam do primeiro item não final. A primeira falha transitória interrompe a rodada para tentar de novo depois. Uma URL expirada fica `unavailable` até uma nova leitura oferecer outra. Ao reiniciar, o módulo retoma apenas cópias já iniciadas pelo usuário.
+
+Limites: o cache do Instagram é parcial e despejável. Mensagens que o aparelho nunca carregou não estão nele. Uma conversa só aparece como completa quando o início foi alcançado e nada está pendente. A leitura do cache não registra o início da conversa, então **nenhuma conversa consolidada por esse caminho aparece como completa**. O relatório distingue histórico processado de histórico disponível. O download da CDN é uma requisição de rede adicional, sem cookies e sem hosts da API.
+
 ## Identidade e evidências estáticas
 
 APK inspecionado **454.0.0.0.55 / 386005100**, SHA-256 `3419bb746e9f78cfdcca3794621e63fcde7317f81dc3b36ba2fe6b75a992b4c8`. A base do PR é a etapa 1 em `09fbe3fa6d35e0d8f09333895269b443c34358c7`, derivada do WaEnhancerXCommunity PR #176, `36b6593c5343bd73a7ba7921c66b0fe42055d6d6`.
@@ -38,3 +58,5 @@ O relato físico da etapa anterior foi de uma mídia reproduzível que não entr
 3. Abra **Mídias compartilhadas** e confirme o atalho, a grade e o visualizador nativos. Confira também a galeria pelo menu da conversa.
 4. Selecione uma pasta extraída de teste. Interrompa o lote, reinicie o app e retome pela biblioteca principal. Confira as contagens e os arquivos mantidos sem vínculo com mensagem.
 5. Leia uma DM, saia, reabra e atualize. Confira o recibo e a ausência de notificações repetidas. Compare com o atalho ligado e desligado.
+6. Consolidação, só em conversa de teste entre contas próprias: envie duas fotos, um vídeo, um carrossel e uma visualização única. Ligue a opção de consolidação, use **Guardar mídias desta conversa** e confira **Cobertura do Direct**. Esperado: quatro partes convencionais guardadas, a visualização única contada como indisponível e não aberta na conta remetente. Repita com modo avião no meio, force-stop e reinício e confira a retomada sem duplicatas.
+7. Rode o dump de uma linha de `direct.db` descrito no inventário e anexe o resultado ao PR, sem dados de conversas reais.

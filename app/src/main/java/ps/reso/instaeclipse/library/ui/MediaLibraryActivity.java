@@ -336,6 +336,7 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
             options.add(new Choice(R.string.media_library_import_folder,
                     () -> launch(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_EXPORT_FOLDER)));
         }
+        options.add(new Choice(R.string.media_library_coverage_action, this::showDirectCoverage));
         options.add(new Choice(R.string.media_library_last_report, () -> work(() -> {
             ImportBatch.Result result = batch.last(scope);
             post(() -> {
@@ -538,6 +539,37 @@ public final class MediaLibraryActivity extends AppCompatActivity implements Lib
             }, false)) Arrays.fill(secret, '\0');
         }));
         dialog.show();
+    }
+
+    private void showDirectCoverage() {
+        work(() -> {
+            ps.reso.instaeclipse.library.core.DirectCoverage coverage =
+                    new ps.reso.instaeclipse.library.core.DirectCoverage(library);
+            String host = "com.instagram.android";
+            ps.reso.instaeclipse.library.core.DirectCoverage.Report report = scoped()
+                    ? coverage.report(scope.packageName, scope.accountKey, scope.threadKey) : coverage.reportAll(host);
+            int kept = 0, refused = 0, ambiguous = 0, viewOnce = 0;
+            for (ps.reso.instaeclipse.library.core.DirectCoverage.ThreadReport thread : report.threads) {
+                kept += thread.imported + thread.alreadyPresent;
+                refused += thread.refused;
+                ambiguous += thread.ambiguous;
+                viewOnce += thread.viewOnce;
+            }
+            String body = getString(R.string.media_library_coverage_body, report.threads.size(), report.threadsComplete,
+                    report.discovered, kept, report.unavailable, viewOnce, refused, ambiguous,
+                    report.pending + report.failed);
+            post(() -> {
+                boolean running = ps.reso.instaeclipse.library.android.DirectConsolidationWorker.isRunning();
+                new AlertDialog.Builder(this).setTitle(R.string.media_library_coverage_title).setMessage(body)
+                        .setNegativeButton(android.R.string.ok, null)
+                        .setPositiveButton(running ? R.string.media_library_coverage_pause : R.string.media_library_coverage_run,
+                                (dialog, which) -> {
+                                    if (running) ps.reso.instaeclipse.library.android.DirectConsolidationWorker.requestPause();
+                                    else ps.reso.instaeclipse.library.android.DirectConsolidationWorker.kick(this);
+                                })
+                        .show();
+            });
+        }, false);
     }
 
     private void detail(String message) {

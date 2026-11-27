@@ -2286,6 +2286,7 @@ public class FeaturesFragment extends Fragment {
         defs.add(getString(R.string.feat_options));
         defs.add(Arrays.asList(
                 createSwitch(R.drawable.ic_folder, A_MEDIA, getString(R.string.media_library_direct_toggle), "directMediaLibrary"),
+                createSwitch(R.drawable.ic_folder, A_MEDIA, getString(R.string.media_library_consolidation_toggle), "directMediaConsolidation"),
                 createSwitch(R.drawable.ic_folder, "#FF9F0A", getString(R.string.ig_dialog_downloader_username_subfolder), "downloaderUsernameFolder"),
                 createSwitch(R.drawable.ic_timer, "#FF9F0A", getString(R.string.ig_dialog_downloader_add_timestamp), "downloaderAddTimestamp"),
                 createSwitch(R.drawable.ic_download, "#FF9F0A", getString(R.string.ig_dialog_downloader_voice), "enableVoiceDownload"),

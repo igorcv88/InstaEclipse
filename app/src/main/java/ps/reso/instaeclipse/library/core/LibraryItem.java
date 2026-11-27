@@ -22,6 +22,7 @@ public final class LibraryItem {
     public final String caption;
     public final long trashedAt;
     public final String blobState;
+    public final boolean viewOnce;
 
     LibraryItem(Map<String, Object> row) {
         id = Sql.Rows.getLong(row, "id");
@@ -42,6 +43,7 @@ public final class LibraryItem {
         caption = Sql.Rows.getString(row, "caption");
         trashedAt = Sql.Rows.getLong(row, "trashed_at");
         blobState = Sql.Rows.getString(row, "state");
+        viewOnce = Sql.Rows.getLong(row, "view_once") != 0;
     }
 
     public boolean isTrashed() {

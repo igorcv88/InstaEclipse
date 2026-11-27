@@ -13,6 +13,8 @@
 | UI e playback | Visibilidade baseada em escopo e resolução de colisões no catálogo | Tela própria instrumentada, playback e zoom físicos pendentes, sem integração visual no balão |
 | IPC | Token, escopo, expiração e uso único | Provider recusa o UID da instrumentação. Validação com o processo real do Instagram pendente |
 | MediaStore | Ordem de fechamento/publicação, inserção recusada, falha de escrita, close, update zero e exceção | Teste instrumentado compara bytes e `IS_PENDING`; APIs 28 e 37 e morte durante exportação pendentes |
+| Cobertura do Direct | `DirectCoverageTest` (12): páginas repetidas, embaralhadas e nas duas direções; ausência nunca apaga nem invalida; falha transitória nunca conta como processada; limite de tentativas; início não alcançado nunca é completo; indisponível que se resolve depois; mídia incompleta recusada; ambiguidade sem escolha; isolamento por conta, conversa e direção; processo novo sem rede | Contagens reais da conversa de teste pendentes |
+| Consolidação | `DirectConsolidationTest` (11): parser de linha, recusa de JSON contraditório, somente hosts de CDN, visualização única nunca baixada, idempotência de reoferta, pausa, reinício e falha transitória, URL expirada, linha removida do cache mantém a cópia, oferta fora do escopo, página IPC malformada recusada inteira, migração v1 → v2 | Dump de linha real, rede observada e visualização única não aberta pendentes |
 | Regressões do Direct | Suíte existente de preferências, contexto da conversa e política de recibos | Reproduzir refresh, force-stop e notificações no Instagram 454 |
 
 ## Execução e mutações
@@ -23,5 +25,7 @@ O host usa JDK 17, Gradle 8.10.2, Android SDK 34, Build Tools 35.0.0 e SQLite JD
 ./gradlew -Dinstaeclipse.ffmpeg=/usr/bin/ffmpeg -Dinstaeclipse.ffprobe=/usr/bin/ffprobe \
   :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
 ```
+
+Seis mutações da etapa 2 foram executadas e revertidas, cada uma derrubando pelo menos um teste: enviar visualização única para download (`viewOnceItemsAreRecordedButNeverFetched`); seguir depois de falha transitória (`interruptionAndTransientFailureResumeWithoutLossOrDuplicates`); apagar o que sumiu da página (cinco testes); rebaixar estado final (dois testes); aceitar qualquer host HTTPS (`onlyMediaCdnHostsAreEverAccepted`); deixar `reached_start` voltar a falso (dois testes).
 
 Duas mutações foram executadas sobre cópias temporárias do código. Fazer uma busca de mensagem devolver a primeira linha de um conflito derrubou `aCollisionHidesTheMessageLookupAndKeepsBothCopies`. Aceitar zero linhas atualizadas na publicação derrubou `exportFailsAndCleansUpWhenPublishWriteOrCloseFails`. A rodada mutada executou 10 casos e falhou exatamente nesses dois. As mutações ficaram fora deste commit.

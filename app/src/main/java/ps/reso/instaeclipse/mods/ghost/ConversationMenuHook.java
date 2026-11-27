@@ -225,6 +225,36 @@ public final class ConversationMenuHook {
                         && CurrentConversation.revalidate(activity, snapshot));
     }
 
+    /** Explicit only. Reads Instagram's local cache read-only; view-once items are never fetched. */
+    private static void consolidate(Activity activity, CurrentConversation.Snapshot snapshot, boolean account) {
+        if (!FeatureFlags.directMediaConsolidation || !CurrentConversation.revalidate(activity, snapshot)) {
+            message(activity, R.string.ie_chat_changed);
+            return;
+        }
+        Runnable start = () -> {
+            if (!CurrentConversation.revalidate(activity, snapshot)) { message(activity, R.string.ie_chat_changed); return; }
+            ps.reso.instaeclipse.library.android.DirectStoreScanner.Done done = result -> activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                String text = result.error != null
+                        ? I18n.t(activity, R.string.media_library_consolidate_failed, result.error)
+                        : I18n.t(activity, R.string.media_library_consolidate_queued, result.offered, result.rows,
+                                result.refusedRows);
+                android.widget.Toast.makeText(activity, text, android.widget.Toast.LENGTH_LONG).show();
+            });
+            boolean queued = account
+                    ? ps.reso.instaeclipse.library.android.DirectStoreScanner.scanAccount(activity, snapshot.accountId, done)
+                    : ps.reso.instaeclipse.library.android.DirectStoreScanner.scanThread(activity, snapshot.accountId,
+                            snapshot.threadId, done);
+            if (!queued) message(activity, R.string.media_library_consolidate_busy);
+        };
+        IeDialog confirm = new IeDialog(activity).title(I18n.t(activity, R.string.media_library_consolidate_title))
+                .message(I18n.t(activity, account ? R.string.media_library_consolidate_account_body
+                        : R.string.media_library_consolidate_thread_body));
+        confirm.primary(I18n.t(activity, R.string.media_library_consolidate_start), start);
+        confirm.secondary(activity.getString(android.R.string.cancel), null);
+        confirm.show();
+    }
+
     public static void show(Activity a) {
         if (a == null || a.isFinishing() || a.isDestroyed() || (openDialog.get() != null && openDialog.get().isShowing())) return;
         CurrentConversation.Snapshot snapshot = CurrentConversation.resolve(a);
@@ -248,6 +278,12 @@ public final class ConversationMenuHook {
         if (FeatureFlags.directMediaLibrary) {
             labels.add(I18n.t(a, R.string.media_library_title));
             actions.add(() -> openMediaLibrary(a, snapshot));
+        }
+        if (FeatureFlags.directMediaLibrary && FeatureFlags.directMediaConsolidation) {
+            labels.add(I18n.t(a, R.string.media_library_consolidate_thread));
+            actions.add(() -> consolidate(a, snapshot, false));
+            labels.add(I18n.t(a, R.string.media_library_consolidate_account));
+            actions.add(() -> consolidate(a, snapshot, true));
         }
         if (labels.isEmpty()) { message(a, R.string.ie_chat_features_disabled); return; }
 

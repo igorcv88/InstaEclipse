@@ -134,4 +134,31 @@ final class ChildProcess {
             System.out.println("offline ok " + (args.length - 1));
         }
     }
+
+    /** Child entry point: with the network disabled, prints the coverage states and reads one copy. */
+    public static final class CoverageReader {
+        public static void main(String[] args) throws Exception {
+            //noinspection deprecation
+            java.net.Socket.setSocketImplFactory(() -> {
+                throw new IllegalStateException("network socket opened");
+            });
+            File root = new File(args[0]);
+            try (JdbcSql sql = new JdbcSql(new File(root, "media_library.db"))) {
+                File dir = new File(root, "media_library");
+                MediaLibrary library = new MediaLibrary(sql, new BlobStore(dir, d -> Long.MAX_VALUE / 4, 0),
+                        new LibraryLock(dir), System::currentTimeMillis);
+                DirectCoverage coverage = new DirectCoverage(library);
+                StringBuilder states = new StringBuilder();
+                for (int i = 3; i < args.length; i++) {
+                    if (states.length() > 0) states.append(',');
+                    states.append(coverage.stateOf("com.instagram.android", args[1], args[2], args[i], false));
+                }
+                LibraryItem item = library.lookup("com.instagram.android", args[1], args[2], args[3], false);
+                if (item == null || !library.blobs().verify(item.sha256, item.sizeBytes)) {
+                    throw new AssertionError("copy unreadable offline");
+                }
+                System.out.println("states " + states);
+            }
+        }
+    }
 }

@@ -157,6 +157,7 @@ public final class LibraryBackup {
             value.put("origin", item.origin);
             if (item.caption != null) value.put("caption", item.caption);
             value.put("trashedAt", item.trashedAt);
+            if (item.viewOnce) value.put("viewOnce", true);
             array.put(value);
         }
         JSONObject catalog = new JSONObject();
@@ -280,11 +281,12 @@ public final class LibraryBackup {
                             if (library.get(uuid) != null) uuid = UUID.randomUUID().toString();
                             sql.insert("INSERT INTO items (uuid, account_id, thread_key, message_key, from_me, "
                                             + "media_kind, mime_type, sha256, message_timestamp, imported_at, origin, "
-                                            + "caption, trashed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                            + "caption, trashed_at, view_once) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                     uuid, accountId, thread, message, fromMe ? 1 : 0,
                                     item.getString("kind"), item.getString("mime"), sha,
                                     item.getLong("messageTimestamp"), item.getLong("importedAt"),
-                                    item.getString("origin"), item.optString("caption", null), item.getLong("trashedAt"));
+                                    item.getString("origin"), item.optString("caption", null), item.getLong("trashedAt"),
+                                    item.optBoolean("viewOnce") ? 1 : 0);
                             report.itemsRestored++;
                         } catch (JSONException failure) {
                             throw new IllegalStateException(failure);
@@ -326,7 +328,8 @@ public final class LibraryBackup {
             new ImportRequest(item.optString("package"), item.optString("accountKey"),
                     item.optString("threadKey"), item.optString("messageKey", null),
                     item.optBoolean("fromMe"), item.optLong("messageTimestamp"),
-                    item.optString("origin"), item.optString("caption", null)).validate();
+                    item.optString("origin"), item.optString("caption", null),
+                    item.optBoolean("viewOnce")).validate();
             if (!item.has("fromMe") || !item.has("messageTimestamp") || !item.has("importedAt")
                     || !item.has("trashedAt") || item.optString("uuid").isEmpty()) {
                 throw invalid("Incomplete media item in backup");

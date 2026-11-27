@@ -50,13 +50,13 @@ final class DirectInlinePreview {
     }
 
     private void hook(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> definition = Class.forName("X.0ThI", false, loader);
-        Class<?> holder = Class.forName("X.0TiJ", false, loader);
-        Class<?> model = Class.forName("X.0BYS", false, loader);
-        Class<?> sessionType = Class.forName("com.instagram.common.session.UserSession", false, loader);
-        Class<?> identifierType = Class.forName("com.instagram.model.direct.messageid.MessageIdentifier", false, loader);
-        Class<?> hostHolder = Class.forName("X.0YmP", false, loader);
-        Class<?> hostModel = Class.forName("X.0mbl", false, loader);
+        Class<?> definition = DirectLibraryHook.hostClass(loader, "X.0ThI");
+        Class<?> holder = DirectLibraryHook.hostClass(loader, "X.0TiJ");
+        Class<?> model = DirectLibraryHook.hostClass(loader, "X.0BYS");
+        Class<?> sessionType = DirectLibraryHook.hostClass(loader, "com.instagram.common.session.UserSession");
+        Class<?> identifierType = DirectLibraryHook.hostClass(loader, "com.instagram.model.direct.messageid.MessageIdentifier");
+        Class<?> hostHolder = DirectLibraryHook.hostClass(loader, "X.0YmP");
+        Class<?> hostModel = DirectLibraryHook.hostClass(loader, "X.0mbl");
         Method bind = definition.getDeclaredMethod("AWs", hostHolder, hostModel);
         Method unbind = definition.getDeclaredMethod("Hjg", hostHolder);
         Method parentId = model.getMethod("CpM");

@@ -215,7 +215,7 @@ public final class DirectLibraryHook {
     }
 
     // These DEX names may start with a digit, which source-level reflection analysis cannot parse.
-    private static Class<?> hostClass(ClassLoader loader, String binaryName) throws ClassNotFoundException {
+    static Class<?> hostClass(ClassLoader loader, String binaryName) throws ClassNotFoundException {
         return Class.forName(binaryName, false, loader);
     }
 

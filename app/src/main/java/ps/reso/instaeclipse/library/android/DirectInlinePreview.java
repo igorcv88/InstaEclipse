@@ -127,27 +127,46 @@ final class DirectInlinePreview {
                         || !holder.isInstance(call.args[0]) || !rowBase.isInstance(call.args[1])) return;
                 try {
                     Object row = call.args[1];
-                    if (!(frame.get(call.args[0]) instanceof FrameLayout container)) return;
+                    DirectTrace.summary(stage, "result=bind");
+                    if (!(frame.get(call.args[0]) instanceof FrameLayout container)) {
+                        DirectTrace.summary(stage, "result=no_frame");
+                        return;
+                    }
                     Object props = delegate.get(row);
                     if (!rowProps.isInstance(props)) {
                         DirectTrace.summary(stage, "result=no_row_props");
                         return;
                     }
                     Object identifier = parentId.invoke(row);
-                    if (!identifierType.isInstance(identifier)) return;
+                    if (!identifierType.isInstance(identifier)) {
+                        DirectTrace.summary(stage, "result=no_identifier");
+                        return;
+                    }
                     String key = (String) serverId.get(identifier);
                     String local = (String) clientContext.get(identifier);
-                    if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)) return;
+                    if (!ImportRequest.validKey(key) || !key.matches("[0-9]+") || key.equals(local)) {
+                        DirectTrace.summary(stage, "result=key_rejected numeric=" + (key != null && key.matches("[0-9]+"))
+                                + " same_as_local=" + (key != null && key.equals(local)));
+                        return;
+                    }
                     Object nativeSession = session.get(call.thisObject);
-                    if (nativeSession == null) return;
+                    if (nativeSession == null) {
+                        DirectTrace.summary(stage, "result=no_session");
+                        return;
+                    }
                     String account = (String) accountId.get(nativeSession);
                     String thread = (String) threadId.get(props);
                     Activity activity = activity(container.getContext());
-                    if (activity == null) return;
+                    if (activity == null) {
+                        DirectTrace.event(account, thread, key, stage, "result=no_activity");
+                        return;
+                    }
                     CurrentConversation.Snapshot foreground = CurrentConversation.resolve(activity);
                     if (foreground == null || !foreground.accountId.equals(account)
                             || !foreground.threadId.equals(thread)) {
-                        DirectTrace.event(account, thread, key, stage, "result=scope_unavailable");
+                        DirectTrace.event(account, thread, key, stage, "result=scope_unavailable foreground="
+                                + (foreground != null) + " account_match=" + (foreground != null && foreground.accountId.equals(account))
+                                + " thread_match=" + (foreground != null && foreground.threadId.equals(thread)));
                         return;
                     }
                     Object type = kind.invoke(row);
@@ -214,6 +233,7 @@ final class DirectInlinePreview {
                     Object row = call.args[1];
                     Object type = kind.invoke(row);
                     String name = type instanceof Enum<?> e ? e.name() : null;
+                    DirectTrace.summary("inline_bind", "result=bind kind=" + name);
                     // Ephemeral media the client renders as a conventional row also get their copy.
                     if (!"MEDIA".equals(name) && !"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
                     if (!(frame.get(call.args[0]) instanceof FrameLayout container)

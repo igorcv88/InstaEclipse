@@ -107,6 +107,35 @@ public final class DirectConsolidation {
         return added;
     }
 
+    public static final class OfferReport {
+        public int queued, alreadyStored, skipped;
+    }
+
+    /** Snapshot of just this offer's identities, before starting its worker. */
+    public OfferReport offerWithReport(String packageName, String accountKey, String threadKey,
+                                       List<Offer> offers) throws IOException {
+        offer(packageName, accountKey, threadKey, offers, false);
+        OfferReport report = new OfferReport();
+        try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
+            for (Offer offer : offers) {
+                DirectCoverage.Discovered identity = offer.identity;
+                LibraryItem kept = library.lookup(packageName, accountKey, threadKey, identity.messageKey,
+                        identity.fromMe);
+                if (kept != null && kept.isAvailable() && library.blobs().existsWithSize(kept.sha256, kept.sizeBytes)) {
+                    report.alreadyStored++;
+                } else if (!library.sql().query("SELECT 1 " + WORK
+                                + "AND a.account_key=? AND d.thread_key=? AND d.message_key=? AND d.from_me=? LIMIT 1",
+                        packageName, DirectCoverage.MAX_ATTEMPTS, accountKey, threadKey, identity.messageKey,
+                        identity.fromMe ? 1 : 0).isEmpty()) {
+                    report.queued++;
+                } else {
+                    report.skipped++;
+                }
+            }
+        }
+        return report;
+    }
+
     private void recordSource(String packageName, String accountKey, String threadKey,
                               DirectCoverage.Discovered identity, String url) throws IOException {
         try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
@@ -114,9 +143,11 @@ public final class DirectConsolidation {
             if (account == null) return;
             library.sql().update("UPDATE direct_items SET "
                             + "state=CASE WHEN state='unavailable' AND (source_url IS NULL OR source_url<>?) "
-                            + "THEN 'pending' ELSE state END, source_url=?, source_seen_at=? WHERE account_id=? "
+                            + "THEN 'pending' ELSE state END, "
+                            + "attempts=CASE WHEN state='failed' AND source_url<>? THEN 0 ELSE attempts END, "
+                            + "source_url=?, source_seen_at=? WHERE account_id=? "
                             + "AND thread_key=? AND message_key=? AND from_me=? AND (view_once=0 OR ?=1 OR from_me=1)",
-                    url, url, library.now(), account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0,
+                    url, url, url, library.now(), account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0,
                     identity.viewOnce ? 1 : 0);
         }
     }

@@ -430,4 +430,50 @@ public final class DirectConsolidationTest {
         }
     }
 
+    @Test public void manualOfferReportsQueuedStoredAndSkippedSeparately() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("saved"), jpeg(62007));
+            DirectStoreRow saved = DirectStoreRow.parse(ME, THREAD, "62007", "media", 1,
+                    row("62007", PEER, "media", imageMedia("saved")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(saved), false);
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+
+            DirectStoreRow eligible = DirectStoreRow.parse(ME, THREAD, "62008", "media", 1,
+                    row("62008", PEER, "media", imageMedia("eligible")));
+            DirectStoreRow blocked = DirectStoreRow.parse(ME, THREAD, "62009", "visual_media", 1,
+                    row("62009", PEER, "visual_media", visual("once", "blocked")));
+            List<DirectConsolidation.Offer> scan = new ArrayList<>();
+            scan.addAll(offers(saved));
+            scan.addAll(offers(eligible));
+            scan.addAll(offers(blocked));
+            DirectConsolidation.OfferReport report = consolidation.offerWithReport(INSTAGRAM, ME, THREAD, scan);
+            assertEquals(1, report.alreadyStored);
+            assertEquals(1, report.queued);
+            assertEquals(1, report.skipped);
+        }
+    }
+
+    @Test public void refreshedEligibleSourceReopensExhaustedRetries() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.failing.add(cdn("bad-source"));
+            DirectStoreRow failed = DirectStoreRow.parse(ME, THREAD, "62010", "media", 1,
+                    row("62010", PEER, "media", imageMedia("bad-source")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(failed), false);
+            for (int i = 0; i < DirectCoverage.MAX_ATTEMPTS; i++) {
+                assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).failed);
+            }
+            assertEquals(0, consolidation.run(INSTAGRAM, cdn, 10, () -> false).attempted);
+
+            cdn.objects.put(cdn("fresh-source"), jpeg(62010));
+            DirectStoreRow refreshed = DirectStoreRow.parse(ME, THREAD, "62010", "media", 1,
+                    row("62010", PEER, "media", imageMedia("fresh-source")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(refreshed), false);
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+        }
+    }
+
 }

@@ -9,6 +9,7 @@ import android.os.Binder;
 import android.os.Bundle;
 import android.os.SystemClock;
 
+import ps.reso.instaeclipse.library.core.DirectConsolidation;
 import ps.reso.instaeclipse.library.core.ImportRequest;
 import ps.reso.instaeclipse.utils.core.IpcSecurity;
 
@@ -68,14 +69,24 @@ public final class ConversationGalleryProvider extends ContentProvider {
                         extras.getStringArrayList(DirectOfferContract.FLAGS),
                         extras.getLongArray(DirectOfferContract.TIMESTAMPS));
         if (offers == null) return reply;
+        boolean explicit = extras.getBoolean(DirectOfferContract.EXPLICIT, false);
+        String account = extras.getString(ACCOUNT);
+        String thread = extras.getString(THREAD);
         try {
-            new ps.reso.instaeclipse.library.core.DirectConsolidation(MediaLibraryRuntime.get(context))
-                    .offer(caller, extras.getString(ACCOUNT), extras.getString(THREAD), offers, false);
+            DirectConsolidation consolidation = new DirectConsolidation(MediaLibraryRuntime.get(context));
+            if (explicit) {
+                DirectConsolidation.OfferReport report = consolidation.offerWithReport(caller, account, thread, offers);
+                reply.putInt(DirectOfferContract.QUEUED, report.queued);
+                reply.putInt(DirectOfferContract.ALREADY_STORED, report.alreadyStored);
+                reply.putInt(DirectOfferContract.SKIPPED, report.skipped);
+            } else {
+                consolidation.offer(caller, account, thread, offers, false);
+            }
         } catch (java.io.IOException | RuntimeException failure) {
             return reply;
         }
         // Only a scan the user started clears a pause; automatic capture respects it.
-        DirectConsolidationWorker.kick(context, extras.getBoolean(DirectOfferContract.EXPLICIT, false), false);
+        DirectConsolidationWorker.kick(context, explicit, false);
         reply.putBoolean(DirectOfferContract.ACCEPTED, true);
         return reply;
     }

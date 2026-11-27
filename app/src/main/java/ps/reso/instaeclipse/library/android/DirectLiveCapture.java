@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import ps.reso.instaeclipse.library.core.DirectConsolidation;
+import ps.reso.instaeclipse.library.core.DirectLiveOfferQueue;
 import ps.reso.instaeclipse.library.core.DirectStoreRow;
 import ps.reso.instaeclipse.library.core.ImportRequest;
 import ps.reso.instaeclipse.utils.core.JitGuard;
@@ -42,21 +44,17 @@ public final class DirectLiveCapture {
     private static final String JSON_FACTORY_HOLDER = "X.02bf";
     private static final String SESSION = "com.instagram.common.session.UserSession";
     private static final long FLUSH_DELAY_MS = 1_500L;
-    private static final int SEEN_LIMIT = 4_096;
 
-    private static volatile Context appContext;
+    private static Context hostContext;
     private static Field rowModel, messageType, threadKey, threadId, sessionUser, visualModel;
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
     private static Class<?> sessionClass, messageContextClass;
     private static volatile Handler worker;
 
-    /** (account|thread|id|fetchable) already offered in this process. */
-    private static final Map<String, Boolean> offered = new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
-        @Override protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-            return size() > SEEN_LIMIT;
-        }
-    };
+    private static final DirectLiveOfferQueue queue = new DirectLiveOfferQueue();
+    private static boolean flushScheduled;
+
     /** Discard reasons already logged, with counts; each reason is logged at most a few times. */
     private static final Map<String, Integer> discards = new LinkedHashMap<>();
     /** Rows seen per message type; the first two of each type are logged. */
@@ -73,12 +71,10 @@ public final class DirectLiveCapture {
         }
     }
 
-    /** Pending rows per account|thread, keyed by message id: a later state replaces an earlier one. */
-    private static final Map<String, Map<String, DirectStoreRow>> pending = new LinkedHashMap<>();
-
     private DirectLiveCapture() {}
 
-    public static void install(Context context, ClassLoader loader) {
+    public static synchronized void install(Context context, ClassLoader loader) {
+        if (worker != null) return;
         try {
             Class<?> contextArg = Class.forName(CONTEXT_ARG, false, loader);
             Class<?> model = Class.forName(MODEL, false, loader);
@@ -109,6 +105,13 @@ public final class DirectLiveCapture {
             if (serialize == null || !"X.0B6n".equals(newGenerator.getReturnType().getName())) {
                 throw new NoSuchMethodException("Serializer");
             }
+            // Application.attach can run before ContextImpl can return its Application.
+            // Its attached host Context is already usable for ContentResolver calls.
+            Context app = context.getApplicationContext();
+            hostContext = app != null ? app : context;
+            sessionClass = session;
+            messageContextClass = contextArg;
+            worker = startWorker();
             int hooked = 0;
             // Every Direct row, whatever its type or builder, starts from an X.01Fo wrapping the
             // message model (454: one constructor, six call sites). The device test showed media rows
@@ -144,13 +147,7 @@ public final class DirectLiveCapture {
                     hooked++;
                 }
             }
-            sessionClass = session;
-            messageContextClass = contextArg;
             if (hooked == 0) throw new NoSuchMethodException("Row builders");
-            appContext = context.getApplicationContext();
-            HandlerThread thread = new HandlerThread("ie-direct-live-capture");
-            thread.start();
-            worker = new Handler(thread.getLooper());
             ModuleLog.line("(IE|MediaLibrary) 454 live capture installed on " + hooked + " row builders");
         } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
             ModuleLog.line("(IE|MediaLibrary) live capture unavailable: " + mismatch);
@@ -234,107 +231,84 @@ public final class DirectLiveCapture {
     private static void capture(Object model, String id, String account, String thread, String type)
             throws ReflectiveOperationException {
         try {
-                long micros = (long) timestamp.invoke(model);
-                StringWriter json = new StringWriter();
-                Object generator = newGenerator.invoke(jsonFactory, json);
-                serialize.invoke(null, generator, model);
-                generator.getClass().getMethod("close").invoke(generator);
-                String text = json.toString();
-                String itemType = new org.json.JSONObject(text).optString("item_type", null);
-                // "Unlimited View Once" rewrites view_mode to "permanent" in this very model; classify
-                // by the original mode it recorded.
-                String rewritten = ps.reso.instaeclipse.mods.ghost.GhostPermanentViewHook
-                        .originalMode(visualModel.get(model));
-                DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
-                if (row == null) { discard("parse_refused type=" + type + " item_type=" + itemType); return; }
-                // Offered again when fetchability or a URL changes: a view-once the user opened, or
-                // a refreshed CDN URL after the previous one expired.
-                StringBuilder state = new StringBuilder();
-                for (DirectStoreRow.Part part : row.parts) {
-                    state.append(part.fetchAllowed ? part.best.url : "-").append('\n');
-                }
-                String seenKey = account + '|' + thread + '|' + id + '|' + state.toString().hashCode();
-                synchronized (offered) {
-                    if (offered.put(seenKey, Boolean.TRUE) != null) return;
-                }
-                int allowed = 0;
-                for (DirectStoreRow.Part part : row.parts) if (part.fetchAllowed) allowed++;
-                ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
-                        + " fetchable=" + allowed + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
-                        + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId));
-                enqueue(row);
+            long micros = (long) timestamp.invoke(model);
+            StringWriter json = new StringWriter();
+            Object generator = newGenerator.invoke(jsonFactory, json);
+            serialize.invoke(null, generator, model);
+            generator.getClass().getMethod("close").invoke(generator);
+            String text = json.toString();
+            String itemType = new org.json.JSONObject(text).optString("item_type", null);
+            // "Unlimited View Once" rewrites view_mode to "permanent" in this very model; classify
+            // by the original mode it recorded.
+            String rewritten = ps.reso.instaeclipse.mods.ghost.GhostPermanentViewHook
+                    .originalMode(visualModel.get(model));
+            DirectStoreRow row = DirectStoreRow.parse(account, thread, id, itemType, micros, text, rewritten);
+            if (row == null) { discard("parse_refused type=" + type + " item_type=" + itemType); return; }
+            DirectLiveOfferQueue.Add added = queue.add(row);
+            if (added == DirectLiveOfferQueue.Add.FULL) discard("live_offer_queue_full");
+            if (added != DirectLiveOfferQueue.Add.QUEUED) return;
+            scheduleFlush();
+            int allowed = 0;
+            for (DirectStoreRow.Part part : row.parts) if (part.fetchAllowed) allowed++;
+            ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
+                    + " fetchable=" + allowed + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
+                    + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId));
         } catch (org.json.JSONException failure) {
             discard("json " + failure.getClass().getSimpleName());
         }
     }
 
-    private static void enqueue(DirectStoreRow row) {
-        String scope = row.accountId + '|' + row.threadId;
-        boolean schedule;
-        synchronized (pending) {
-            schedule = pending.isEmpty();
-            pending.computeIfAbsent(scope, ignored -> new LinkedHashMap<>()).put(row.itemId, row);
-        }
-        if (schedule && !worker.postDelayed(DirectLiveCapture::safeFlush, FLUSH_DELAY_MS)) {
-            // The looper is gone: start a new one so captures keep flowing.
-            ModuleLog.line("(IE|MediaLibrary) live capture worker was stopped; restarting it");
-            HandlerThread thread = new HandlerThread("ie-direct-live-capture");
-            thread.start();
-            worker = new Handler(thread.getLooper());
-            worker.postDelayed(DirectLiveCapture::safeFlush, FLUSH_DELAY_MS);
-        }
+    private static Handler startWorker() {
+        HandlerThread thread = new HandlerThread("ie-direct-live-capture");
+        thread.start();
+        return new Handler(thread.getLooper());
     }
 
-    /** Never lets an exception kill the worker thread (or Instagram): log it and keep the rows. */
-    private static void safeFlush() {
-        try {
-            flush();
-        } catch (Throwable failure) {
-            StackTraceElement[] trace = failure.getStackTrace();
-            ModuleLog.line("(IE|MediaLibrary) live capture flush failed: " + failure
-                    + (trace.length > 0 ? " at " + trace[0] : ""));
-            synchronized (offered) {
-                offered.clear(); // let every row be offered again on its next bind
-            }
+    private static synchronized void scheduleFlush() {
+        if (flushScheduled || !queue.hasPending()) return;
+        flushScheduled = worker.postDelayed(DirectLiveCapture::flush, FLUSH_DELAY_MS);
+        if (!flushScheduled) {
+            worker = startWorker();
+            flushScheduled = worker.postDelayed(DirectLiveCapture::flush, FLUSH_DELAY_MS);
         }
     }
 
     private static void flush() {
-        Map<String, Map<String, DirectStoreRow>> batch;
-        synchronized (pending) {
-            batch = new LinkedHashMap<>(pending);
-            pending.clear();
-        }
-        Context context = appContext;
-        int queued = 0;
-        for (Map<String, DirectStoreRow> byId : batch.values()) queued += byId.size();
-        ModuleLog.line("(IE|MediaLibrary) live capture flushing rows=" + queued
-                + (context == null ? " (no context)" : ""));
-        if (context == null) return;
-        int sent = 0;
-        for (Map<String, DirectStoreRow> byId : batch.values()) {
-            List<DirectStoreRow> rows = new ArrayList<>(byId.values());
-            DirectStoreRow first = rows.get(0);
-            for (List<DirectStoreRow> part : DirectStoreRow.batches(rows,
-                    ps.reso.instaeclipse.library.core.DirectConsolidation.MAX_OFFER_PARTS)) {
-                Boolean accepted = DirectStoreScanner.offer(context, first.accountId, first.threadId, part, false);
-                if (!Boolean.TRUE.equals(accepted)) {
-                    forget(part);
-                    ModuleLog.line("(IE|MediaLibrary) live capture offer "
-                            + (accepted == null ? "unavailable" : "refused") + " rows=" + part.size());
-                    continue;
-                }
-                sent += part.size();
+        try {
+            Map<String, List<DirectLiveOfferQueue.Entry>> byThread = new LinkedHashMap<>();
+            for (DirectLiveOfferQueue.Entry entry : queue.snapshot()) {
+                DirectStoreRow row = entry.row;
+                byThread.computeIfAbsent(row.accountId + '|' + row.threadId, ignored -> new ArrayList<>()).add(entry);
             }
-        }
-        if (sent > 0) ModuleLog.line("(IE|MediaLibrary) live capture offered rows=" + sent);
-    }
+            for (List<DirectLiveOfferQueue.Entry> entries : byThread.values()) {
+                List<DirectStoreRow> rows = new ArrayList<>(entries.size());
+                for (DirectLiveOfferQueue.Entry entry : entries) rows.add(entry.row);
 
-    /** Rows the module did not take are offered again on their next bind. */
-    private static void forget(List<DirectStoreRow> rows) {
-        synchronized (offered) {
-            for (DirectStoreRow row : rows) {
-                offered.keySet().removeIf(key -> key.startsWith(row.accountId + '|' + row.threadId + '|' + row.itemId + '|'));
+                int offset = 0;
+                for (List<DirectStoreRow> batch : DirectStoreRow.batches(rows, DirectConsolidation.MAX_OFFER_PARTS)) {
+                    DirectStoreRow first = batch.get(0);
+                    Boolean accepted = null;
+                    if (FeatureFlags.directMediaLibrary && FeatureFlags.directMediaConsolidation) {
+                        try {
+                            accepted = DirectStoreScanner.offer(hostContext, first.accountId, first.threadId, batch, false);
+                        } catch (RuntimeException | LinkageError failure) {
+                            discard("offer_" + failure.getClass().getSimpleName());
+                        }
+                    }
+                    int end = offset + batch.size();
+                    int dropped = queue.finish(entries.subList(offset, end), Boolean.TRUE.equals(accepted));
+                    offset = end;
+                    ModuleLog.line("(IE|MediaLibrary) live capture offer "
+                            + (accepted == null ? "unavailable" : accepted ? "accepted" : "refused")
+                            + " rows=" + batch.size() + " retry_exhausted=" + dropped);
+                }
+            }
+        } catch (RuntimeException | LinkageError failure) {
+            discard("flush_" + failure.getClass().getSimpleName());
+        } finally {
+            synchronized (DirectLiveCapture.class) {
+                flushScheduled = false;
+                scheduleFlush();
             }
         }
     }

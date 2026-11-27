@@ -99,8 +99,8 @@ public final class DirectStoreRow {
     /**
      * @param rewrittenMode the original view mode when InstaEclipse's own "Unlimited View Once"
      *                      option rewrote it to "permanent" in Instagram's model; null otherwise.
-     *                      The item is then classified by its real mode. Because Instagram already
-     *                      shows it as permanent media, fetching it consumes nothing and is allowed.
+     *                      The item is classified by its original mode. A rewrite does not establish
+     *                      ownership or that the recipient has opened it.
      */
     public static DirectStoreRow parse(String accountId, String threadId, String serverItemId, String messageType,
                                        long timestampMicros, String json, String rewrittenMode) {
@@ -151,11 +151,11 @@ public final class DirectStoreRow {
                 for (int i = 0; i < carousel.length() && i < 20; i++) {
                     JSONObject slide = carousel.optJSONObject(i);
                     if (slide == null) continue;
-                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen || rewrittenMode != null,
+                    parts.add(part(serverItemId + ":" + i, fromMe, viewOnce, fromMe || seen,
                             timestampMs, slide));
                 }
             } else {
-                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen || rewrittenMode != null, timestampMs, media));
+                parts.add(part(serverItemId, fromMe, viewOnce, fromMe || seen, timestampMs, media));
             }
         } else {
             parts.add(new Part(new DirectCoverage.Discovered(serverItemId, fromMe, "unknown", viewOnce, timestampMs), null));

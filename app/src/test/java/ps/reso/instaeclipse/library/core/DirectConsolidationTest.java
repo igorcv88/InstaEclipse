@@ -365,9 +365,13 @@ public final class DirectConsolidationTest {
         DirectStoreRow restored = DirectStoreRow.parse(ME, THREAD, "62001", "visual_media", 1, json, "once");
         assertTrue(restored.viewOnce);
         assertTrue(restored.parts.get(0).identity.viewOnce);
-        assertTrue("Instagram already shows it as permanent media", restored.parts.get(0).fetchAllowed);
+        assertFalse("Rewriting the presentation does not authorize an unopened copy", restored.parts.get(0).fetchAllowed);
         DirectStoreRow replay = DirectStoreRow.parse(ME, THREAD, "62002", "visual_media", 1,
                 row("62002", PEER, "visual_media", visual("permanent", "rp")), "replayable");
         assertTrue(replay.viewOnce);
+        assertFalse(replay.parts.get(0).fetchAllowed);
+        DirectStoreRow opened = DirectStoreRow.parse(ME, THREAD, "62003", "visual_media", 1,
+                row("62003", PEER, "visual_media", visual("permanent", "opened", ME)), "replayable");
+        assertTrue(opened.parts.get(0).fetchAllowed);
     }
 }

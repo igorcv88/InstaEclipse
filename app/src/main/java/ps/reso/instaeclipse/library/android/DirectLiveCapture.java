@@ -424,7 +424,6 @@ public final class DirectLiveCapture {
 
     private static boolean capture(Object model, String id, String account, String thread, String type,
                                    String observer) throws ReflectiveOperationException {
-        boolean fromSharedMedia = "shared_media".equals(observer);
         try {
             long micros = (long) timestamp.invoke(model);
             StringWriter json = new StringWriter();
@@ -447,12 +446,6 @@ public final class DirectLiveCapture {
                 discard("parse_refused type=" + type + " item_type=" + itemType);
                 return false;
             }
-            // A persisted "permanent" visual model may be an older, already rewritten row.
-            if (fromSharedMedia && !DirectStoreRow.TYPE_MEDIA.equals(itemType) && !row.viewOnce
-                    && !account.equals(row.senderId) && !row.seenByViewer) {
-                discard("shared_media_visual_mode_unverified");
-                return false;
-            }
             DirectLiveOfferQueue.Add added = queue.add(row);
             if (added == DirectLiveOfferQueue.Add.FULL) discard("live_offer_queue_full");
             if (DirectTrace.enabled()) {
@@ -461,18 +454,25 @@ public final class DirectLiveCapture {
                             "observer=" + observer + " parent=" + DirectTrace.alias(account, thread, id)
                                     + " result=" + added + " candidate=" + (part.best != null)
                                     + " fetchable=" + part.fetchAllowed + " kind=" + part.identity.mediaKind
+                                    + " view_once=" + part.identity.viewOnce
+                                    + (part.sourceGap == null ? "" : " source_gap=" + part.sourceGap)
                                     + " from_me=" + part.identity.fromMe);
                 }
             }
             if (added != DirectLiveOfferQueue.Add.QUEUED) return false;
             scheduleFlush();
             int allowed = 0, missingSource = 0;
+            String gap = null;
             for (DirectStoreRow.Part part : row.parts) {
                 if (part.fetchAllowed) allowed++;
-                if (part.best == null) missingSource++;
+                if (part.best == null) {
+                    missingSource++;
+                    if (gap == null) gap = part.sourceGap;
+                }
             }
             ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
-                    + " fetchable=" + allowed + " missing_source=" + missingSource + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
+                    + " fetchable=" + allowed + " missing_source=" + missingSource
+                    + (gap == null ? "" : " source_gap=" + gap) + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
                     + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId)
                     + " source=" + observer);
             return true;

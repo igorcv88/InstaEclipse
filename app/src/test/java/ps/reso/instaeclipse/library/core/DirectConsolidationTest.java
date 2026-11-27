@@ -112,7 +112,7 @@ public final class DirectConsolidationTest {
         assertFalse(DirectStoreRow.isCdnUrl(null));
     }
 
-    @Test public void viewOnceItemsAreRecordedButNeverFetched() throws Exception {
+    @Test public void viewOnceAndReplayableItemsAreKeptWithTheirMode() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             MediaLibrary library = fixture.open();
             DirectConsolidation consolidation = new DirectConsolidation(library);
@@ -129,18 +129,32 @@ public final class DirectConsolidationTest {
             cdn.objects.put(cdn("replay"), jpeg(2));
             cdn.objects.put(cdn("unknown"), jpeg(3));
             DirectConsolidation.RunReport report = consolidation.run(INSTAGRAM, cdn, 50, () -> false);
-            assertEquals(0, report.attempted);
-            assertTrue(cdn.requested.isEmpty());
-            assertTrue(library.listAll(false).isEmpty());
-            DirectCoverage.Report coverage = consolidation.coverage().report(INSTAGRAM, ME, null);
-            assertEquals(3, coverage.unavailable);
-            assertEquals(3, coverage.threads.get(0).viewOnce);
-            Long account = library.findAccount(INSTAGRAM, ME);
-            assertTrue(library.sql().query("SELECT 1 FROM direct_items WHERE account_id=? AND source_url IS NOT NULL",
-                    account).isEmpty());
-            assertEquals(3, library.sql().query("SELECT 1 FROM direct_items WHERE last_error=?",
-                    DirectConsolidation.VIEW_ONCE_NOT_FETCHED).size());
+            assertEquals(3, report.imported);
+            assertEquals(3, library.listAll(false).size());
+            for (String id : new String[] {"30001", "30002", "30003"}) {
+                LibraryItem kept = library.lookup(INSTAGRAM, ME, THREAD, id, false);
+                assertTrue(kept.viewOnce);
+                assertEquals("captured", kept.origin);
+            }
+            assertEquals(3, consolidation.coverage().report(INSTAGRAM, ME, null).threads.get(0).viewOnce);
         }
+    }
+
+    @Test public void aViewOnceWithoutAnyUrlIsRecordedWithTheGap() throws Exception {
+        DirectStoreRow noMedia = DirectStoreRow.parse(ME, THREAD, "30010", "visual_media", 1,
+                row("30010", PEER, "visual_media", new JSONObject().put("view_mode", "once")));
+        assertNull(noMedia.parts.get(0).best);
+        assertFalse(noMedia.parts.get(0).fetchAllowed);
+        assertEquals("no_media", noMedia.parts.get(0).sourceGap);
+        DirectStoreRow noVersions = DirectStoreRow.parse(ME, THREAD, "30011", "visual_media", 1,
+                row("30011", PEER, "visual_media", new JSONObject().put("view_mode", "once")
+                        .put("media", new JSONObject().put("media_type", 1))));
+        assertEquals("no_versions", noVersions.parts.get(0).sourceGap);
+        JSONObject foreign = new JSONObject().put("media_type", 1).put("image_versions2", new JSONObject()
+                .put("candidates", new JSONArray().put(new JSONObject().put("url", "https://lookaside.example.net/x?sig=secret"))));
+        DirectStoreRow foreignHost = DirectStoreRow.parse(ME, THREAD, "30012", "visual_media", 1,
+                row("30012", PEER, "visual_media", new JSONObject().put("view_mode", "once").put("media", foreign)));
+        assertEquals("host=lookaside.example.net", foreignHost.parts.get(0).sourceGap);
     }
 
     @Test public void conventionalItemsAreFetchedOnceAndReofferingIsIdempotent() throws Exception {
@@ -315,7 +329,7 @@ public final class DirectConsolidationTest {
         return visual;
     }
 
-    @Test public void viewOnceIsFetchableOnlyWhenOwnOrAlreadyOpenedByTheAccount() throws Exception {
+    @Test public void everyViewOnceWithASourceIsFetchableAndKeepsItsMode() throws Exception {
         DirectStoreRow unseen = DirectStoreRow.parse(ME, THREAD, "60001", "raven_media", 1,
                 row("60001", PEER, "visual_media", visual("once", "u")).replace("\"item_type\":\"visual_media\"", "\"item_type\":\"raven_media\""));
         DirectStoreRow seenByOther = DirectStoreRow.parse(ME, THREAD, "60002", "visual_media", 1,
@@ -326,8 +340,10 @@ public final class DirectConsolidationTest {
                 row("60004", ME, "visual_media", visual("once", "m")));
         DirectStoreRow permanent = DirectStoreRow.parse(ME, THREAD, "60005", "raven_media", 1,
                 row("60005", PEER, "visual_media", visual("permanent", "p")).replace("\"item_type\":\"visual_media\"", "\"item_type\":\"raven_media\""));
-        assertFalse(unseen.parts.get(0).fetchAllowed);
-        assertFalse(seenByOther.parts.get(0).fetchAllowed);
+        assertTrue(unseen.parts.get(0).fetchAllowed);
+        assertTrue(unseen.viewOnce);
+        assertTrue(seenByOther.parts.get(0).fetchAllowed);
+        assertTrue(seenByOther.viewOnce);
         assertTrue(opened.parts.get(0).fetchAllowed);
         assertTrue(opened.seenByViewer);
         assertTrue(own.parts.get(0).fetchAllowed);
@@ -335,7 +351,7 @@ public final class DirectConsolidationTest {
         assertFalse(permanent.viewOnce);
     }
 
-    @Test public void aViewOnceIsKeptAfterTheUserOpensItAndKeepsItsFlag() throws Exception {
+    @Test public void aViewOnceIsKeptBeforeAndAfterTheUserOpensItAndKeepsItsFlag() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             MediaLibrary library = fixture.open();
             DirectConsolidation consolidation = new DirectConsolidation(library);
@@ -344,13 +360,14 @@ public final class DirectConsolidationTest {
             DirectStoreRow before = DirectStoreRow.parse(ME, THREAD, "61001", "visual_media", 1,
                     row("61001", PEER, "visual_media", visual("once", "vo")));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(before), false);
-            consolidation.run(INSTAGRAM, cdn, 10, () -> false);
-            assertTrue("nothing is requested before the user opens it", cdn.requested.isEmpty());
+            assertEquals("kept while still unopened", 1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
             fixture.clock.addAndGet(60_000);
             DirectStoreRow after = DirectStoreRow.parse(ME, THREAD, "61001", "visual_media", 1,
                     row("61001", PEER, "visual_media", visual("once", "vo", ME)));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(after), false);
-            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            assertEquals("opening it later does not fetch it again", 0,
+                    consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            assertEquals(1, cdn.requested.size());
             LibraryItem kept = library.lookup(INSTAGRAM, ME, THREAD, "61001", false);
             assertTrue(kept.viewOnce);
             assertEquals("captured", kept.origin);
@@ -364,11 +381,11 @@ public final class DirectConsolidationTest {
         DirectStoreRow restored = DirectStoreRow.parse(ME, THREAD, "62001", "visual_media", 1, json, "once");
         assertTrue(restored.viewOnce);
         assertTrue(restored.parts.get(0).identity.viewOnce);
-        assertFalse("Rewriting the presentation does not authorize an unopened copy", restored.parts.get(0).fetchAllowed);
+        assertTrue("view-once media are kept as permanent copies", restored.parts.get(0).fetchAllowed);
         DirectStoreRow replay = DirectStoreRow.parse(ME, THREAD, "62002", "visual_media", 1,
                 row("62002", PEER, "visual_media", visual("permanent", "rp")), "replayable");
         assertTrue(replay.viewOnce);
-        assertFalse(replay.parts.get(0).fetchAllowed);
+        assertTrue(replay.parts.get(0).fetchAllowed);
         DirectStoreRow opened = DirectStoreRow.parse(ME, THREAD, "62003", "visual_media", 1,
                 row("62003", PEER, "visual_media", visual("permanent", "opened", ME)), "replayable");
         assertTrue(opened.parts.get(0).fetchAllowed);
@@ -379,7 +396,7 @@ public final class DirectConsolidationTest {
                 projection, "replayable");
         assertTrue(converted.viewOnce);
         assertNotNull(converted.parts.get(0).best);
-        assertFalse(converted.parts.get(0).fetchAllowed);
+        assertTrue(converted.parts.get(0).fetchAllowed);
 
         DirectStoreRow conventional = DirectStoreRow.parse(ME, THREAD, "62004", "media", 1, projection);
         assertFalse(conventional.viewOnce);
@@ -394,7 +411,7 @@ public final class DirectConsolidationTest {
         assertTrue(opened.parts.get(0).fetchAllowed);
     }
 
-    @Test public void aConventionalCacheProjectionCannotRequeueAKnownReceivedViewOnce() throws Exception {
+    @Test public void aConventionalProjectionSuppliesTheUrlOfAKnownViewOnce() throws Exception {
         try (LibraryFixture fixture = new LibraryFixture()) {
             DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
             FakeCdn cdn = new FakeCdn();
@@ -406,8 +423,9 @@ public final class DirectConsolidationTest {
             DirectStoreRow projected = DirectStoreRow.parse(ME, THREAD, "62005", "media", 1,
                     row("62005", PEER, "media", imageMedia("cache-projection")));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(projected), false);
-            assertEquals(0, consolidation.run(INSTAGRAM, cdn, 10, () -> false).attempted);
-            assertTrue(cdn.requested.isEmpty());
+            assertEquals(1, consolidation.run(INSTAGRAM, cdn, 10, () -> false).imported);
+            assertTrue("the catalog keeps the known view-once mode",
+                    consolidation.coverage().report(INSTAGRAM, ME, null).threads.get(0).viewOnce == 1);
         }
     }
 
@@ -450,8 +468,8 @@ public final class DirectConsolidationTest {
             scan.addAll(offers(blocked));
             DirectConsolidation.OfferReport report = consolidation.offerWithReport(INSTAGRAM, ME, THREAD, scan);
             assertEquals(1, report.alreadyStored);
-            assertEquals(1, report.queued);
-            assertEquals(1, report.skipped);
+            assertEquals("the conventional and the view-once item are both queued", 2, report.queued);
+            assertEquals(0, report.skipped);
         }
     }
 

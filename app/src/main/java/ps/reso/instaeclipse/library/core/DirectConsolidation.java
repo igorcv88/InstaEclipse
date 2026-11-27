@@ -12,16 +12,11 @@ import java.util.function.BooleanSupplier;
  * Consolidation of eligible Direct media into the library: discovery, then capture, each with
  * its own recorded state (see {@link DirectCoverage}).
  *
- * <p>Binding owner decisions (newest first):</p>
- * <ul>
- *   <li>2026-11-27, after the device test: conventional and permanent ("keep in chat") media are
- *       kept automatically when Instagram shows them. View-once and replayable items are kept
- *       only after the user opened them in Instagram (the account is in {@code seen_user_ids}) or
- *       when they are the user's own; otherwise they are recorded and left {@code UNAVAILABLE}
- *       with {@code view_once_not_fetched}. Fetching then consumes nothing.</li>
- *   <li>2026-11-26: never run, automatically, anything that consumes a view-once view or changes a
- *       message's state on the server.</li>
- * </ul>
+ * <p>Binding owner decision (2026-11-27, final goal, replaces the earlier view-once rules):
+ * view-once and replayable media are made permanent. Every part whose model holds a CDN URL is
+ * fetched and kept, whatever its mode, sender or view state, and keeps its original mode in the
+ * catalog ({@code view_once}). A conventional projection of a known view-once item may supply
+ * the URL. Items without a URL are recorded as unavailable with the reason the parser gives.</p>
  *
  * <p>The only network operation is an HTTPS GET of a media CDN URL that the client's own model
  * already holds ({@link DirectStoreRow#isCdnUrl}). It never calls an Instagram API host.</p>
@@ -166,9 +161,8 @@ public final class DirectConsolidation {
                             + "source_seen_at=CASE WHEN source_url=? AND state IN ('pending','failed') "
                             + "THEN source_seen_at ELSE MAX(COALESCE(source_seen_at,0)+1,?) END, "
                             + "source_url=? WHERE account_id=? "
-                            + "AND thread_key=? AND message_key=? AND from_me=? AND (view_once=0 OR ?=1 OR from_me=1)",
-                    url, url, url, library.now(), url, account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0,
-                    identity.viewOnce ? 1 : 0);
+                            + "AND thread_key=? AND message_key=? AND from_me=?",
+                    url, url, url, library.now(), url, account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0);
         }
     }
 

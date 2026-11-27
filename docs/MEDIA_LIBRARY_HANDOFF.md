@@ -2,6 +2,8 @@
 
 ## Decisões vinculantes do responsável (mais recentes primeiro)
 
+-1. **2026-11-27, objetivo final.** Tornar definitivas as mídias efêmeras: toda visualização única e com repetição cujo modelo traga URL de CDN é baixada e guardada na biblioteca, com o modo original marcado, independentemente de remetente, estado de visualização ou da opção "Visualização única ilimitada". Depois, a cópia substituirá o balão efêmero pela estética de foto definitiva. O laudo técnico de 27/11 serve só de guia técnico, não de regra. Substitui as restrições de visualização única das entradas 0 e 1.
+
 0. **2026-11-27, após o teste físico.** Comportamento esperado igual ao WhatsApp: guardar automaticamente as mídias que chegam e que o Instagram mostra, vinculadas à mensagem, para sempre e offline. Visualização única e com repetição são guardadas quando o usuário as abre no Instagram (ou quando são dele), nunca antes. Substitui a restrição de "só por ação explícita" da entrada 1 para mídias convencionais e permanentes; a proibição de consumir visualização única continua.
 
 1. **2026-11-27.** Não executar automaticamente operações que consumam visualizações únicas ou alterem irreversivelmente o estado das mensagens no servidor. Separar a consolidação histórica de arquivos elegíveis da abertura de mensagens efêmeras. Validar primeiro só com mídias de teste próprias ou autorizadas, sem operações em massa sobre conversas reais. Biblioteca, associação individual e integração visual são validadas de forma independente, e nenhuma depende de alterar o estado remoto. Preservar a disponibilidade nativa e não tratar a apresentação inline como garantia contra perda. **Revoga** a aceitação de prefetch da entrada 3.

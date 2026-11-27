@@ -43,21 +43,28 @@ public final class DirectStoreRow {
         /** The single best candidate the client holds, or null when none is usable. */
         public final Candidate best;
         /**
-         * Whether the module may fetch {@link #best}. Conventional and permanent items always;
-         * view-once and replayable items only when they are the account's own or the account is
-         * already in {@code seen_user_ids} (the user opened it in Instagram). Fetching then
-         * consumes nothing. Owner decision 2026-11-27.
+         * Whether the module may fetch {@link #best}: whenever the client's model holds a usable CDN
+         * URL, for every mode. Owner decision 2026-11-27 (final goal): view-once and replayable
+         * media are kept as permanent copies in the library, marked with their original mode; the
+         * fetch is a CDN GET and calls no Instagram API.
          */
         public final boolean fetchAllowed;
+        /** Why {@link #best} is null: no_media, no_versions, no_url or host=&lt;non-CDN host&gt;. Null when present. */
+        public final String sourceGap;
 
         Part(DirectCoverage.Discovered identity, Candidate best) {
-            this(identity, best, !identity.viewOnce);
+            this(identity, best, true, best == null ? "no_media" : null);
         }
 
         Part(DirectCoverage.Discovered identity, Candidate best, boolean fetchAllowed) {
+            this(identity, best, fetchAllowed, best == null ? "no_url" : null);
+        }
+
+        Part(DirectCoverage.Discovered identity, Candidate best, boolean fetchAllowed, String sourceGap) {
             this.fetchAllowed = fetchAllowed && best != null;
             this.identity = identity;
             this.best = best;
+            this.sourceGap = best == null ? (sourceGap == null ? "no_url" : sourceGap) : null;
         }
     }
 
@@ -198,8 +205,31 @@ public final class DirectStoreRow {
         boolean isVideo = type == 2 || (type == 0 && video != null);
         Candidate chosen = isVideo ? video : image;
         String kind = chosen == null ? "unknown" : (isVideo ? MediaSniffer.KIND_VIDEO : MediaSniffer.KIND_IMAGE);
+        String gap = null;
+        if (chosen == null) {
+            JSONArray candidates = versions == null ? null : versions.optJSONArray("candidates");
+            JSONArray videos = media.optJSONArray("video_versions");
+            String host = firstHost(isVideo ? videos : candidates);
+            gap = (isVideo ? videos == null : candidates == null) ? "no_versions"
+                    : host != null ? "host=" + host : "no_url";
+        }
         return new Part(new DirectCoverage.Discovered(key, fromMe, kind, viewOnce, timestampMs), chosen,
-                !viewOnce || openedOrOwn);
+                true, gap);
+    }
+
+    /** Host of the first URL in a version list (diagnostics only; never the full URL). */
+    static String firstHost(JSONArray versions) {
+        if (versions == null) return null;
+        for (int i = 0; i < versions.length(); i++) {
+            JSONObject version = versions.optJSONObject(i);
+            String url = version == null ? null : version.optString("url", null);
+            if (url == null || !url.contains("://")) continue;
+            int start = url.indexOf("://") + 3;
+            int end = url.indexOf('/', start);
+            String host = end < 0 ? url.substring(start) : url.substring(start, end);
+            return host.replaceAll("[^A-Za-z0-9.-]", "").toLowerCase(java.util.Locale.ROOT);
+        }
+        return null;
     }
 
     /** Largest candidate by pixel count with an https URL on an Instagram or Facebook CDN. */

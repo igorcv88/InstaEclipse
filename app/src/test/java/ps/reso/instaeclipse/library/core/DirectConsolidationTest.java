@@ -220,8 +220,7 @@ public final class DirectConsolidationTest {
             // Running again does not hammer the CDN with the same expired URL.
             consolidation.run(INSTAGRAM, cdn, 50, () -> false);
             assertEquals(1, cdn.requested.size());
-            // The client refreshed the message; its new URL is offered and works.
-            fixture.clock.addAndGet(60_000);
+            // An automatic offer may refresh the source in the same clock tick.
             DirectStoreRow fresh = DirectStoreRow.parse(ME, THREAD, "33001", "media", 1, row("33001", PEER, "media", imageMedia("new")));
             cdn.objects.put(cdn("new"), jpeg(33001));
             consolidation.offer(INSTAGRAM, ME, THREAD, offers(fresh), true);
@@ -393,6 +392,23 @@ public final class DirectConsolidationTest {
         assertTrue(opened.viewOnce);
         assertTrue(opened.seenByViewer);
         assertTrue(opened.parts.get(0).fetchAllowed);
+    }
+
+    @Test public void aConventionalCacheProjectionCannotRequeueAKnownReceivedViewOnce() throws Exception {
+        try (LibraryFixture fixture = new LibraryFixture()) {
+            DirectConsolidation consolidation = new DirectConsolidation(fixture.open());
+            FakeCdn cdn = new FakeCdn();
+            cdn.objects.put(cdn("cache-projection"), jpeg(62005));
+            DirectStoreRow original = DirectStoreRow.parse(ME, THREAD, "62005", "visual_media", 1,
+                    row("62005", PEER, "visual_media", visual("once", "original")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(original), false);
+
+            DirectStoreRow projected = DirectStoreRow.parse(ME, THREAD, "62005", "media", 1,
+                    row("62005", PEER, "media", imageMedia("cache-projection")));
+            consolidation.offer(INSTAGRAM, ME, THREAD, offers(projected), false);
+            assertEquals(0, consolidation.run(INSTAGRAM, cdn, 10, () -> false).attempted);
+            assertTrue(cdn.requested.isEmpty());
+        }
     }
 
 }

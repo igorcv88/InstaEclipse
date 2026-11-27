@@ -113,9 +113,12 @@ public final class DirectConsolidation {
         try (LibraryLock.Held ignored = library.lock().acquire(LOCK_TIMEOUT_MS)) {
             Long account = library.findAccount(packageName, accountKey);
             if (account == null) return;
-            library.sql().update("UPDATE direct_items SET source_url=?, source_seen_at=? WHERE account_id=? "
-                            + "AND thread_key=? AND message_key=? AND from_me=?",
-                    url, library.now(), account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0);
+            library.sql().update("UPDATE direct_items SET "
+                            + "state=CASE WHEN state='unavailable' AND (source_url IS NULL OR source_url<>?) "
+                            + "THEN 'pending' ELSE state END, source_url=?, source_seen_at=? WHERE account_id=? "
+                            + "AND thread_key=? AND message_key=? AND from_me=? AND (view_once=0 OR ?=1 OR from_me=1)",
+                    url, url, library.now(), account, threadKey, identity.messageKey, identity.fromMe ? 1 : 0,
+                    identity.viewOnce ? 1 : 0);
         }
     }
 

@@ -78,7 +78,8 @@ public final class DirectLibraryHook {
         Method action = null;
         for (Method candidate : hostClass(loader, "X.0QtM").getDeclaredMethods()) {
             Class<?>[] types = candidate.getParameterTypes();
-            if ("A08".equals(candidate.getName()) && Modifier.isStatic(candidate.getModifiers())
+            // 454: an instance method (PUBLIC FINAL), not static; argument positions are the same.
+            if ("A08".equals(candidate.getName())
                     && candidate.getReturnType() == void.class && types.length > 38
                     && types[0] == Activity.class && types[1] == View.class
                     && SESSION.equals(types[2].getName()) && "X.0OHZ".equals(types[34].getName())

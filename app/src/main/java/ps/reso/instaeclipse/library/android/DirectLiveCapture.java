@@ -33,7 +33,8 @@ import ps.reso.instaeclipse.xposedcompat.XposedBridge;
  * {@code seen_user_ids} (the user opened them in Instagram).</p>
  */
 public final class DirectLiveCapture {
-    private static final String BUILDERS = "X.0BMD";
+    /** Row builders in 454: X.0BMD (media rows and A08 for visual rows) and X.0Bu5.A00 (visual rows). */
+    private static final String[] BUILDERS = { "X.0BMD", "X.0Bu5" };
     private static final String CONTEXT_ARG = "X.01Fo";
     private static final String MODEL = "X.01hK";
     private static final String MODEL_BASE = "X.0DKm";
@@ -47,6 +48,7 @@ public final class DirectLiveCapture {
     private static Field rowModel, messageType, threadKey, threadId, sessionUser, visualModel;
     private static Method serverId, timestamp, serialize, newGenerator;
     private static Object jsonFactory;
+    private static Class<?> sessionClass, messageContextClass;
     private static Handler worker;
 
     /** (account|thread|id|fetchable) already offered in this process. */
@@ -62,7 +64,6 @@ public final class DirectLiveCapture {
 
     public static void install(Context context, ClassLoader loader) {
         try {
-            Class<?> builders = Class.forName(BUILDERS, false, loader);
             Class<?> contextArg = Class.forName(CONTEXT_ARG, false, loader);
             Class<?> model = Class.forName(MODEL, false, loader);
             Class<?> base = Class.forName(MODEL_BASE, false, loader);
@@ -93,13 +94,29 @@ public final class DirectLiveCapture {
                 throw new NoSuchMethodException("Serializer");
             }
             int hooked = 0;
-            for (Method method : builders.getDeclaredMethods()) {
-                Class<?>[] types = method.getParameterTypes();
-                if (!Modifier.isStatic(method.getModifiers()) || types.length != 5 || types[0] != Context.class
-                        || types[1] != session || types[3] != contextArg) continue;
-                XposedBridge.hookMethod(method, HOOK);
-                hooked++;
+            for (String name : BUILDERS) {
+                Class<?> builders;
+                try {
+                    builders = Class.forName(name, false, loader);
+                } catch (ClassNotFoundException absent) {
+                    continue;
+                }
+                for (Method method : builders.getDeclaredMethods()) {
+                    if (!Modifier.isStatic(method.getModifiers()) || method.getReturnType() == void.class) continue;
+                    // Any static builder that receives the session and the message context, wherever they
+                    // sit: visual rows (view-once, replay, keep in chat) use a 4-argument variant.
+                    boolean hasSession = false, hasMessage = false;
+                    for (Class<?> type : method.getParameterTypes()) {
+                        hasSession |= type == session;
+                        hasMessage |= type == contextArg;
+                    }
+                    if (!hasSession || !hasMessage) continue;
+                    XposedBridge.hookMethod(method, HOOK);
+                    hooked++;
+                }
             }
+            sessionClass = session;
+            messageContextClass = contextArg;
             if (hooked == 0) throw new NoSuchMethodException("Row builders");
             appContext = context.getApplicationContext();
             HandlerThread thread = new HandlerThread("ie-direct-live-capture");
@@ -116,7 +133,13 @@ public final class DirectLiveCapture {
             JitGuard.tick(param.method);
             if (param.hasThrowable() || !FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
             try {
-                Object model = rowModel.get(param.args[3]);
+                Object session = null, context = null;
+                for (Object arg : param.args) {
+                    if (sessionClass.isInstance(arg)) session = arg;
+                    else if (messageContextClass.isInstance(arg)) context = arg;
+                }
+                if (session == null || context == null) return;
+                Object model = rowModel.get(context);
                 if (model == null) return;
                 Object type = messageType.get(model);
                 String name = type instanceof Enum<?> e ? e.name() : null;
@@ -124,7 +147,7 @@ public final class DirectLiveCapture {
                 String id = (String) serverId.invoke(model);
                 Object key = threadKey.get(model);
                 String thread = key == null ? null : (String) threadId.get(key);
-                String account = (String) sessionUser.get(param.args[1]);
+                String account = (String) sessionUser.get(session);
                 if (!ImportRequest.validKey(id) || !ImportRequest.validKey(thread) || !ImportRequest.validKey(account)) return;
                 long micros = (long) timestamp.invoke(model);
                 StringWriter json = new StringWriter();
@@ -149,6 +172,11 @@ public final class DirectLiveCapture {
                 synchronized (offered) {
                     if (offered.put(seenKey, Boolean.TRUE) != null) return;
                 }
+                int allowed = 0;
+                for (DirectStoreRow.Part part : row.parts) if (part.fetchAllowed) allowed++;
+                ModuleLog.line("(IE|MediaLibrary) live capture queued type=" + itemType + " parts=" + row.parts.size()
+                        + " fetchable=" + allowed + " viewOnce=" + row.viewOnce + " seen=" + row.seenByViewer
+                        + " rewritten=" + rewritten + " fromMe=" + account.equals(row.senderId));
                 enqueue(row);
             } catch (ReflectiveOperationException | RuntimeException | org.json.JSONException | LinkageError failure) {
                 ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure.getClass().getSimpleName());

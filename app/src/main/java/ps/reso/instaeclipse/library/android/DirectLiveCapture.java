@@ -59,8 +59,8 @@ public final class DirectLiveCapture {
     };
     /** Discard reasons already logged, with counts; each reason is logged at most a few times. */
     private static final Map<String, Integer> discards = new LinkedHashMap<>();
-    private static final java.util.concurrent.atomic.AtomicInteger firstRows =
-            new java.util.concurrent.atomic.AtomicInteger();
+    /** Rows seen per message type; the first two of each type are logged. */
+    private static final Map<String, Integer> typesSeen = new LinkedHashMap<>();
     private static final Handler main = new Handler(android.os.Looper.getMainLooper());
 
     private static void discard(String reason) {
@@ -110,6 +110,19 @@ public final class DirectLiveCapture {
                 throw new NoSuchMethodException("Serializer");
             }
             int hooked = 0;
+            // Every Direct row, whatever its type or builder, starts from an X.01Fo wrapping the
+            // message model (454: one constructor, six call sites). The device test showed media rows
+            // that never reach the static builders, so the constructor is the capture point.
+            for (java.lang.reflect.Constructor<?> constructor : contextArg.getDeclaredConstructors()) {
+                boolean hasSession = false, hasModel = false;
+                for (Class<?> type : constructor.getParameterTypes()) {
+                    hasSession |= type == session;
+                    hasModel |= type == model;
+                }
+                if (!hasSession || !hasModel) continue;
+                XposedBridge.hookMethod(constructor, CONSTRUCTOR_HOOK);
+                hooked++;
+            }
             for (String name : BUILDERS) {
                 Class<?> builders;
                 try {
@@ -144,13 +157,31 @@ public final class DirectLiveCapture {
         }
     }
 
+    /** After X.01Fo(UserSession, X.019w, X.01hK, X.0ZiN): the new object is the message context. */
+    private static final XC_MethodHook CONSTRUCTOR_HOOK = new XC_MethodHook() {
+        @Override protected void afterHookedMethod(MethodHookParam param) {
+            JitGuard.tick(param.method);
+            if (param.hasThrowable()) return;
+            Object[] args = new Object[param.args.length + 1];
+            System.arraycopy(param.args, 0, args, 0, param.args.length);
+            args[param.args.length] = param.thisObject;
+            handle(param.method, args);
+        }
+    };
+
     private static final XC_MethodHook HOOK = new XC_MethodHook() {
         @Override protected void afterHookedMethod(MethodHookParam param) {
             JitGuard.tick(param.method);
-            if (param.hasThrowable() || !FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
+            if (param.hasThrowable()) return;
+            handle(param.method, param.args);
+        }
+    };
+
+    private static void handle(java.lang.reflect.Member method, Object[] args) {
+            if (!FeatureFlags.directMediaLibrary || !FeatureFlags.directMediaConsolidation) return;
             try {
                 Object session = null, context = null;
-                for (Object arg : param.args) {
+                for (Object arg : args) {
                     if (sessionClass.isInstance(arg)) session = arg;
                     else if (messageContextClass.isInstance(arg)) context = arg;
                 }
@@ -159,9 +190,13 @@ public final class DirectLiveCapture {
                 if (model == null) { discard("no_model"); return; }
                 Object type = messageType.get(model);
                 String name = type instanceof Enum<?> e ? e.name() : String.valueOf(type);
-                if (firstRows.getAndIncrement() < 5) {
+                int seenOfType;
+                synchronized (typesSeen) {
+                    seenOfType = typesSeen.merge(name, 1, Integer::sum);
+                }
+                if (seenOfType <= 2) {
                     ModuleLog.line("(IE|MediaLibrary) live capture saw a row type=" + name
-                            + " builder=" + param.method.getDeclaringClass().getName() + "." + param.method.getName());
+                            + " via=" + method.getDeclaringClass().getName() + "." + method.getName());
                 }
                 if (!"MEDIA".equals(name) && !"EXPIRING_MEDIA".equals(name) && !"VISUAL_MEDIA".equals(name)) return;
                 String id = (String) serverId.invoke(model);
@@ -181,8 +216,7 @@ public final class DirectLiveCapture {
             } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
                 ModuleLog.line("(IE|MediaLibrary) live capture skipped a row: " + failure);
             }
-        }
-    };
+    }
 
     private static void fromForeground(Object model, String id, String account, String type) {
         try {

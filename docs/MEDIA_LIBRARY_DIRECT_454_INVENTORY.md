@@ -73,6 +73,12 @@ O ID usado pelo `CurrentConversation` (`thread:`), o `thread_id` de `direct.db` 
 
 `DirectLiveCapture` intercepta esses construtores, serializa o modelo de mensagens `media`, `raven_media` e `visual_media`, aplica o mesmo `DirectStoreRow` e oferece ao módulo em lotes de 1,5 s, uma vez por mensagem e estado. Visualização única e com repetição só recebem URL quando a conta é a remetente ou já aparece em `seen_user_ids`.
 
+### Evidência física da captura ao vivo (2026-11-27)
+
+- `direct.db` guarda só a primeira página de cada conversa (o que aparece ao abrir). As páginas carregadas ao rolar para cima não são gravadas: o botão de leitura do cache nunca as vê.
+- Com `511a1ff`/`7de23ab`, o hook dos construtores estáticos de `X.0BMD`/`X.0Bu5` só viu linhas `TEXT` (`X.0BMD.A01`). As linhas de mídia da conversa de teste passam por outro caminho, por exemplo `X.0C0s.Ag6(X.01Fo)` (método de instância), que também cria o modelo visual `X.0E34`.
+- Ponto de captura passa a ser o construtor único de `X.01Fo(UserSession, X.019w, X.01hK, X.0ZiN)`, que todo caminho de linha recebe pronto (6 chamadas no DEX).
+
 ## Interação com "Visualização única ilimitada"
 
 `GhostPermanentViewHook` (opção `permanentViewMode`) reescreve `view_mode` de `once`/`replayable` para `permanent` no objeto `X.02jG` devolvido pelo parser, antes de o Instagram gravar `direct.db` e antes da captura serializar o modelo. Com a opção ligada, `permanent` deixa de provar que a mídia é permanente. As 4 linhas do teste físico podem ter sido visualização única reescrita.

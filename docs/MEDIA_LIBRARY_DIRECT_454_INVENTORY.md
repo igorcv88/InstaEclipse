@@ -114,3 +114,9 @@ Limite: linhas já gravadas em `direct.db` com a opção ligada não guardam o m
 
 Evidência física (Galaxy, `IEDirectTrace`, 27/11 16:14): 27 partes efêmeras com `source_gap=no_versions` (o Instagram remove as versões depois da visualização), 4 delas já guardadas; 11 consultas `inline_lookup result=no_eligible_copy`, 2 delas para mensagens com cópia guardada. `DirectInlinePreview` passa a desenhar a cópia guardada no balão visual e `MediaLibrary.inlineCopy` aceita cópias capturadas e de visualização única.
 
+
+### Teste físico de 2026-11-27 (tile) e ajustes
+
+- O tile `X.0ThE` recebeu a cópia (21 aplicações, expirado e visualizável). A cópia ia para `X.0Ths.A01` (`message_content_visual_thumbnail_bubble_container`) com `MATCH_PARENT`; esse container é `wrap_content` e, em mídia expirada, a imagem nativa `A03` fica pequena, então a cópia ficava minúscula no canto. Agora a cópia de qualquer balão efêmero tem tamanho de foto (240dp de largura, altura pela proporção entre 140dp e 340dp) e a imagem nativa (`A03`), o overlay de pendência (`A00`), o glifo (`A02`) e o progresso (`A04`) ficam ocultos com restauração compare-and-restore. O container passa a ter o tamanho da cópia.
+- Toque na cópia abre direto o visualizador com a cópia da mensagem (extra `open_copy`, que só dispensa a grade; a concessão continua restrita à mesma mensagem). Sem cópia, abre a galeria da mensagem.
+- `direct_visual_message` (0x7f0e0506) só é inflado por `X.02vL.B6O`, mas nenhum bind de `X.02vL` apareceu no teste. A pílula "(1) Foto" vista no aparelho vem de outro binder. Diagnóstico `row_binder` (só com o trace ligado): nos despachantes genéricos `X.0BID.A0R` e `X.0BO7.A0R`, uma linha por combinação de definição, modelo e tipo.

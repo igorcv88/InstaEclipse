@@ -38,6 +38,7 @@ final class DirectInlinePreview {
     private static final ThreadPoolExecutor READS = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(16), task -> new Thread(task, "ie-direct-inline"));
     private final Map<FrameLayout, WeakReference<Binding>> bindings = new WeakHashMap<>();
+    private static final java.util.Set<String> BINDER_COMBOS = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private static final class Binding {
         ImageView overlay;
@@ -80,8 +81,53 @@ final class DirectInlinePreview {
      */
     private void hookVisual(ClassLoader loader) throws ReflectiveOperationException {
         hookEphemeralRow(loader, "X.02vL", "X.0AHX", "A04", new String[] {"A05", "A06", "A08"}, true);
-        hookEphemeralRow(loader, "X.0ThE", "X.0Ths", "A01", new String[] {"A02"}, false);
+        hookEphemeralRow(loader, "X.0ThE", "X.0Ths", "A01", new String[] {"A00", "A02", "A03", "A04"}, false);
         ps.reso.instaeclipse.utils.log.ModuleLog.line("(IE|MediaLibrary) 454 visual inline installed");
+        try {
+            traceBinders(loader, "X.0BID", "X.0Yza", "BrX");
+            traceBinders(loader, "X.0BO7", "X.0Zb2", "DLm");
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError mismatch) {
+            DirectTrace.summary("row_binder_install", "result=" + mismatch.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Diagnostic, trace only: names each (dispatcher, definition, model, kind) combination once, so a
+     * row type that no hook above covers (the view-once pill) can be identified on the device.
+     */
+    private void traceBinders(ClassLoader loader, String dispatcherName, String wrapperName, String modelGetter)
+            throws ReflectiveOperationException {
+        Class<?> dispatcher = DirectLibraryHook.hostClass(loader, dispatcherName);
+        Class<?> wrapper = DirectLibraryHook.hostClass(loader, wrapperName);
+        Class<?> rowBase = DirectLibraryHook.hostClass(loader, "X.0B79");
+        Method model = wrapper.getMethod(modelGetter);
+        Method kind = rowBase.getMethod("BrO");
+        Field definition = field(dispatcher, "A01");
+        Method entry = null;
+        for (Method candidate : dispatcher.getDeclaredMethods()) {
+            if (candidate.getName().equals("A0R") && candidate.getParameterTypes().length == 2) entry = candidate;
+        }
+        if (entry == null) throw new NoSuchMethodException(dispatcherName + ".A0R");
+        XposedBridge.hookMethod(entry, new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam call) {
+                if (!DirectTrace.enabled() || call.hasThrowable()) return;
+                try {
+                    Object item = call.args[1];
+                    Object row = wrapper.isInstance(item) ? model.invoke(item) : null;
+                    Object type = rowBase.isInstance(row) ? kind.invoke(row) : null;
+                    Object owner = definition.get(call.thisObject);
+                    String combo = dispatcherName + " def=" + (owner == null ? "null" : owner.getClass().getName())
+                            + " item=" + (item == null ? "null" : item.getClass().getName())
+                            + " model=" + (row == null ? "null" : row.getClass().getName())
+                            + " kind=" + (type instanceof Enum<?> e ? e.name() : String.valueOf(type));
+                    if (BINDER_COMBOS.size() < 256 && BINDER_COMBOS.add(combo)) {
+                        DirectTrace.summary("row_binder", combo);
+                    }
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                    DirectTrace.summary("row_binder", "result=" + failure.getClass().getSimpleName());
+                }
+            }
+        });
     }
 
     private void hookEphemeralRow(ClassLoader loader, String definitionName, String holderName, String frameName,
@@ -325,13 +371,15 @@ final class DirectInlinePreview {
                         overlay.setImageBitmap(thumbnail);
                         overlay.setScaleType(ImageView.ScaleType.CENTER_CROP);
                         overlay.setContentDescription(I18n.t(activity, R.string.media_library_title));
+                        // A tap anywhere on the bubble opens this message's own copy in the viewer.
                         overlay.setOnClickListener(view -> DirectGalleryLauncher.open(activity, selection,
                                 () -> current(frame) == binding && FeatureFlags.directMediaLibrary
-                                        && CurrentConversation.revalidate(activity, foreground)));
+                                        && CurrentConversation.revalidate(activity, foreground), true));
                         FrameLayout.LayoutParams params;
-                        if (binding.visual) {
-                            // The ephemeral pill becomes a photo bubble: 240dp wide, aspect kept
-                            // between 140dp and 340dp tall.
+                        if (binding.ephemeral) {
+                            // An ephemeral bubble (pill or tile) becomes a photo bubble: 240dp wide,
+                            // aspect kept between 140dp and 340dp tall. The native views are hidden,
+                            // so the wrap-content container takes the copy's size.
                             float dp = frame.getResources().getDisplayMetrics().density;
                             int width = Math.round(240 * dp);
                             int height = Math.round(width * (float) thumbnail.getHeight() / Math.max(1, thumbnail.getWidth()));
